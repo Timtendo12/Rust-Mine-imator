@@ -119,3 +119,83 @@ fn new_ids_do_not_collide() {
     assert_eq!(project.length(), 0);
     assert!(project.evaluate(0.0).0.nodes.is_empty());
 }
+
+#[test]
+fn display_names_follow_the_original_rules() {
+    use mi_core::{ObjRef, ResType, TempType};
+    use mi_format::language::Language;
+    use mi_format::project::{Resource, Template};
+
+    let language = Language::load(
+        br#"{ "type/": { "folder": "Folder", "cube": "Cube", "scenery": "Scenery", "bodypart": "Body part" },
+              "model/": { "human": "Human", "chest": "Chest" }, "modelpart/": { "left_arm": "Left arm" },
+              "block/": { "oak_stairs": "Oak Stairs" }, "timelineunusedbodypart": "Unused body part",
+              "librarybodypartof": "%1 of %2" }"#,
+    )
+    .unwrap();
+
+    let mut file = ProjectFile::new(0.0, 1.0);
+    let mut resource = Resource::new(SaveId::new("RES"), ResType::Scenery);
+    resource.filename = "houses/Small house.schematic".into();
+    file.objects.resources.push(resource);
+
+    let mut character = Template::new(SaveId::new("CHAR"), TempType::Character);
+    character.model_name = "human".into();
+    let mut scenery = Template::new(SaveId::new("SCEN"), TempType::Scenery);
+    scenery.scenery = ObjRef::id("RES");
+    let mut part = Template::new(SaveId::new("PART"), TempType::Bodypart);
+    part.model_name = "human".into();
+    part.model_part_name = "left_arm".into();
+    let mut named = Template::new(SaveId::new("NAMED"), TempType::Cube);
+    named.name = "My cube".into();
+    file.objects.templates = vec![character, scenery, part, named];
+
+    let timeline = |kind: TlType, edit: &dyn Fn(&mut Timeline)| {
+        let mut tl = Timeline::new(SaveId::new("T"), kind, &file.defaults);
+        edit(&mut tl);
+        tl
+    };
+    let cases = vec![
+        (timeline(TlType::Folder, &|_| {}), "Folder"),
+        (timeline(TlType::Folder, &|tl| tl.name = "Props".into()), "Props"),
+        (timeline(TlType::Character, &|tl| tl.temp = ObjRef::id("CHAR")), "Human"),
+        (timeline(TlType::Scenery, &|tl| tl.temp = ObjRef::id("SCEN")), "Small house"),
+        (timeline(TlType::Bodypart, &|tl| tl.temp = ObjRef::id("PART")), "Left arm of Human"),
+        (timeline(TlType::Cube, &|tl| tl.temp = ObjRef::id("NAMED")), "My cube"),
+        (timeline(TlType::Cube, &|tl| tl.temp = ObjRef::id("GONE")), "Cube"),
+        (
+            timeline(TlType::Bodypart, &|tl| {
+                tl.part_of = ObjRef::id("X");
+                tl.model_part_name = "left_arm".into();
+            }),
+            "Left arm",
+        ),
+        (timeline(TlType::Bodypart, &|tl| tl.part_of = ObjRef::id("X")), "Unused body part"),
+        (
+            timeline(TlType::SpecialBlock, &|tl| {
+                tl.part_of = ObjRef::id("X");
+                tl.part_model = Some(("chest".into(), Vec::new()));
+            }),
+            "Chest",
+        ),
+        (
+            timeline(TlType::Block, &|tl| {
+                tl.part_of = ObjRef::id("X");
+                tl.part_block = Some(("oak_stairs".into(), Vec::new()));
+            }),
+            "Oak Stairs",
+        ),
+        (
+            timeline(TlType::Block, &|tl| {
+                tl.part_of = ObjRef::id("X");
+                tl.part_block = Some(("mossy_cobblestone".into(), Vec::new()));
+            }),
+            "Mossy cobblestone",
+        ),
+    ];
+
+    let (project, _) = Project::from_file(file.clone(), IdGenerator::new(1));
+    for (tl, expected) in cases {
+        assert_eq!(project.timeline_display_name(&tl, &language), expected);
+    }
+}

@@ -1,27 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   appInfo,
+  closeProject,
   evaluateFrame,
   openProject,
   startupProject,
   type AppInfo,
   type FrameState,
   type ProjectSummary,
-  type Vec3,
 } from "./backend";
+import { MenuBar, type Menu } from "./MenuBar";
+import { Properties } from "./Properties";
+import { StartScreen } from "./StartScreen";
 import { Timeline } from "./Timeline";
 import { Viewport } from "./Viewport";
-
-function formatTime(frame: number, tempo: number): string {
-  if (tempo <= 0) return "0:00.00";
-  const seconds = frame / tempo;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${(seconds - minutes * 60).toFixed(2).padStart(5, "0")}`;
-}
-
-const formatNumber = (value: number) => (Math.round(value * 1000) / 1000).toString();
-const formatVec = (value: Vec3) => value.map(formatNumber).join(", ");
 
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -30,7 +24,6 @@ export function App() {
   const [marker, setMarker] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [zoom, setZoom] = useState(12);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,10 +47,21 @@ export function App() {
   useEffect(() => {
     appInfo().then(setInfo, (e) => setError(String(e)));
     // Opened by double-clicking a project file, or with a path argument.
-    startupProject().then((path) => {
-      if (path) void loadProject(path);
-    }, () => undefined);
+    startupProject().then(
+      (path) => {
+        if (path) void loadProject(path);
+      },
+      () => undefined,
+    );
   }, [loadProject]);
+
+  // Window title: "<project> - Mine-imator".
+  useEffect(() => {
+    const title = project ? `${project.name || "Untitled"} - Mine-imator` : "Mine-imator";
+    getCurrentWindow()
+      .setTitle(title)
+      .catch(() => undefined);
+  }, [project]);
 
   // The backend evaluates the scene; only the latest answer is shown so that
   // fast scrubbing cannot display a stale frame.
@@ -97,153 +101,103 @@ export function App() {
 
   const seek = useCallback((value: number) => {
     setPlaying(false);
-    setMarker(value);
+    setMarker(Math.max(0, value));
   }, []);
 
-  const chooseProject = async () => {
+  const browse = useCallback(async () => {
     const path = await open({
       multiple: false,
       filters: [{ name: "Mine-imator project", extensions: ["miproject", "mproj", "mani"] }],
     });
     if (typeof path === "string") await loadProject(path);
-  };
+  }, [loadProject]);
 
-  const selectedIndex = project && selected ? project.timelines.findIndex((t) => t.id === selected) : -1;
-  const selectedTimeline = project && selectedIndex >= 0 ? project.timelines[selectedIndex] : null;
-  const selectedFrame = frame && selectedIndex >= 0 ? frame.timelines[selectedIndex] : null;
+  const close = useCallback(() => {
+    setPlaying(false);
+    setProject(null);
+    setFrame(null);
+    void closeProject();
+  }, []);
+
+  if (!project) {
+    return (
+      <div className="app">
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
+        <StartScreen version={info?.tracksVersion ?? null} busy={busy} onBrowse={browse} onOpen={loadProject} />
+      </div>
+    );
+  }
+
+  // Items without an action are features that are not available yet.
+  const menus: Menu[] = [
+    {
+      title: "File",
+      items: [
+        { label: "New project" },
+        { label: "Open project…", action: browse },
+        { label: "Save project" },
+        { label: "Save as…" },
+        { label: "Import asset…" },
+        { label: "Close project", action: close },
+      ],
+    },
+    {
+      title: "Edit",
+      items: [{ label: "Undo" }, { label: "Redo" }, { label: "Select all" }, { label: "Duplicate" }, { label: "Delete" }],
+    },
+    { title: "Render", items: [{ label: "Export image…" }, { label: "Export animation…" }] },
+    {
+      title: "View",
+      items: [
+        { label: "Go to first frame", action: () => seek(0) },
+        { label: "Go to last frame", action: () => seek(project.length) },
+      ],
+    },
+    { title: "Help", items: [{ label: `Version ${info?.version ?? ""} (tracks ${info?.tracksVersion ?? ""})` }] },
+  ];
 
   return (
     <div className="app">
-      <header className="toolbar">
-        <span className="title">Mine-imator</span>
-        <button onClick={chooseProject} disabled={busy}>
-          {busy ? "Opening…" : "Open project…"}
-        </button>
-        {project && (
-          <>
-            <button className="secondary" onClick={() => seek(0)} title="Go to the first frame">
-              ⏮
-            </button>
-            <button className="secondary" onClick={() => setPlaying(!playing)} disabled={project.length === 0}>
-              {playing ? "Pause" : "Play"}
-            </button>
-            <span className="time">
-              {formatTime(marker, project.tempo)} · frame {Math.floor(marker)} / {project.length}
-            </span>
-            <label className="zoom">
-              Zoom
-              <input type="range" min={2} max={32} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
-            </label>
-          </>
-        )}
-        <span className="spacer" />
-        {info && (
-          <span className="muted">
-            {info.version} · tracks {info.tracksVersion} · Minecraft {info.minecraftVersion}
-          </span>
-        )}
-      </header>
-
+      <MenuBar menus={menus} />
       {error && (
         <div className="error" role="alert">
           {error}
         </div>
       )}
-
-      {!project && (
-        <main className="empty">
-          <p>Open a .miproject file to load its timelines and play back its animation data.</p>
-          <p className="muted">
-            The editor is being rebuilt system by system; see docs/PORTING_STATUS.md for what works today.
-          </p>
-        </main>
-      )}
-
-      {project && (
-        <main className="workspace">
-          <aside className="panel side">
-            <h1>{project.name}</h1>
-            {project.author && <p className="muted">by {project.author}</p>}
-            {project.description && <p className="description">{project.description}</p>}
-            <dl>
-              <dt>Saved with</dt>
-              <dd>
-                {project.createdIn || "unknown"} (format {project.format})
-              </dd>
-              <dt>Video</dt>
-              <dd>
-                {project.videoWidth} × {project.videoHeight}, {project.tempo} fps
-              </dd>
-              <dt>Library</dt>
-              <dd>
-                {project.templates} templates, {project.resources} resources
-              </dd>
-              <dt>Scene</dt>
-              <dd>
-                {project.timelines.length} timelines, {project.cameras} cameras, {project.markers} markers
-              </dd>
-            </dl>
-
-            {project.warnings.length > 0 && (
-              <div className="warnings">
-                <h2>Warnings</h2>
-                <ul>
-                  {project.warnings.map((warning, i) => (
-                    <li key={i}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <h2 className="section">Selection</h2>
-            {selectedTimeline && selectedFrame ? (
-              <dl>
-                <dt>Name</dt>
-                <dd>{selectedTimeline.name || "(unnamed)"}</dd>
-                <dt>Type</dt>
-                <dd>{selectedTimeline.kind}</dd>
-                <dt>Position</dt>
-                <dd>{formatVec(selectedFrame.position)}</dd>
-                <dt>Rotation</dt>
-                <dd>{formatVec(selectedFrame.rotation)}</dd>
-                <dt>Scale</dt>
-                <dd>{formatVec(selectedFrame.scale)}</dd>
-                <dt>In the world</dt>
-                <dd>{formatVec(selectedFrame.worldPosition)}</dd>
-                <dt>Visible</dt>
-                <dd>{selectedFrame.visible ? "yes" : "no"}</dd>
-                <dt>Alpha</dt>
-                <dd>{formatNumber(selectedFrame.alpha)}</dd>
-                <dt>Transition</dt>
-                <dd>{selectedFrame.transition}</dd>
-                <dt>Keyframes</dt>
-                <dd>{selectedTimeline.keyframes.length}</dd>
-              </dl>
-            ) : (
-              <p className="muted">Click a timeline to see its values at the current frame.</p>
-            )}
-          </aside>
-
-          <div className="stage">
-            <Viewport />
-            <section className="panel timeline-panel">
-            {project.timelines.length === 0 ? (
-              <p className="muted">This project has no timelines.</p>
-            ) : (
-              <Timeline
-                project={project}
-                frame={frame}
-                marker={marker}
-                selected={selected}
-                zoom={zoom}
-                onSeek={seek}
-                onSelect={setSelected}
-              />
-            )}
-            </section>
-          </div>
-        </main>
-      )}
+      <div className="editor">
+        <div className="stage">
+          <Viewport />
+          <Timeline
+            project={project}
+            frame={frame}
+            marker={marker}
+            selected={selected}
+            playing={playing}
+            onSeek={seek}
+            onSelect={setSelected}
+            onPlay={setPlaying}
+          />
+        </div>
+        <Properties project={project} frame={frame} selected={selected} />
+      </div>
+      <footer className="shortcut-bar">
+        <span>
+          <kbd>Left click</kbd> Select timeline
+        </span>
+        <span>
+          <kbd>Left drag</kbd> Orbit view
+        </span>
+        <span>
+          <kbd>Shift</kbd> + <kbd>Left drag</kbd> Pan view
+        </span>
+        <span>
+          <kbd>Wheel</kbd> Zoom
+        </span>
+      </footer>
     </div>
   );
 }

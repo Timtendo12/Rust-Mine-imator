@@ -1,6 +1,7 @@
 //! Application state shared between commands.
 
 use crate::viewport::{ViewState, ViewportHandle};
+use mi_format::language::Language;
 use mi_project::Project;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -11,6 +12,7 @@ pub struct AppState {
     project: Mutex<Option<Project>>,
     view: Mutex<ViewState>,
     viewport: OnceLock<ViewportHandle>,
+    language: OnceLock<Language>,
     startup_path: Mutex<Option<String>>,
 }
 
@@ -51,6 +53,17 @@ impl AppState {
     pub fn update_view(&self, change: impl FnOnce(&mut ViewState)) {
         change(&mut lock(&self.view));
         self.redraw();
+    }
+
+    /// The interface texts. Empty until loaded at startup, in which case
+    /// names fall back to identifiers.
+    pub fn language(&self) -> &Language {
+        static EMPTY: OnceLock<Language> = OnceLock::new();
+        self.language.get().unwrap_or_else(|| EMPTY.get_or_init(Language::default))
+    }
+
+    pub fn set_language(&self, language: Language) {
+        let _ = self.language.set(language);
     }
 
     /// Registers the viewport once it has been created.

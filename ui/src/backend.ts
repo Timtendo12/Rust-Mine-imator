@@ -21,8 +21,41 @@ export interface TimelineSummary {
   hidden: boolean;
 }
 
+export interface EnvironmentSummary {
+  /** Angle of the sun in degrees; 0 is noon, 15 degrees per hour. */
+  skyTime: number;
+  skyRotation: number;
+  biome: string;
+  skyColor: string;
+  cloudsColor: string;
+  sunlightColor: string;
+  ambientColor: string;
+  nightColor: string;
+  twilight: boolean;
+  cloudsShow: boolean;
+  groundShow: boolean;
+  fogShow: boolean;
+  wind: boolean;
+  textureAnimationSpeed: number;
+}
+
+export interface RecentItem {
+  name: string;
+  author: string;
+  description: string;
+  filename: string;
+  /** Milliseconds since the Unix epoch, to be read as local wall-clock time. */
+  lastOpened: number | null;
+  pinned: boolean;
+  exists: boolean;
+  thumbnail: string | null;
+}
+
 export interface ProjectSummary {
   path: string | null;
+  renderSettings: string;
+  renderSamples: number;
+  environment: EnvironmentSummary;
   name: string;
   author: string;
   description: string;
@@ -66,6 +99,13 @@ export const appInfo = () => invoke<AppInfo>("app_info");
 
 /** Path of the project file the application was started with. Only answered once. */
 export const startupProject = () => invoke<string | null>("startup_project");
+
+export const recentProjects = () => invoke<RecentItem[]>("recent_projects");
+
+/** Removes a project from the recent list and returns the new list. */
+export const forgetRecentProject = (filename: string) => invoke<RecentItem[]>("forget_recent_project", { filename });
+
+export const closeProject = () => invoke<void>("close_project");
 
 export const openProject = (path: string) => invoke<ProjectSummary>("open_project", { path });
 

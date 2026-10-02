@@ -5,7 +5,9 @@
 //! See `docs/formats.md` for a description of each format.
 
 pub mod json;
+pub mod language;
 pub mod project;
+pub mod recent;
 mod record;
 pub mod values;
 

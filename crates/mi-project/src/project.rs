@@ -3,7 +3,9 @@
 use crate::tree::Tree;
 use mi_anim::{update_scene, Playhead, SceneNode, SceneState};
 use mi_core::{IdGenerator, SaveId, TlType};
+use mi_format::language::Language;
 use mi_format::project::{LoadOptions, ProjectFile, Resource, Template, Timeline};
+use mi_core::{ObjRef, TempType};
 use mi_format::FormatError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -47,6 +49,15 @@ pub struct ProjectContext {
 impl Default for ProjectContext {
     fn default() -> Self {
         Self { ground_slot: 0.0 }
+    }
+}
+
+/// File name without folder and extension.
+fn file_stem(filename: &str) -> String {
+    let name = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
+    match name.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem.to_owned(),
+        _ => name.to_owned(),
     }
 }
 
@@ -193,6 +204,66 @@ impl Project {
 
     pub fn resource(&self, id: &SaveId) -> Option<&Resource> {
         self.resource_index.get(id).map(|&i| &self.file.objects.resources[i])
+    }
+
+    /// Name a template is shown with (`temp_update_display_name`): its own
+    /// name, or one derived from what it is.
+    pub fn template_display_name(&self, template: &Template, language: &Language) -> String {
+        if !template.name.is_empty() {
+            return template.name.clone();
+        }
+        match template.kind {
+            TempType::Character | TempType::SpecialBlock => language.asset_name("model", &template.model_name),
+            TempType::Block => language.asset_name("block", &template.block_name),
+            TempType::Bodypart => language.text(
+                "librarybodypartof",
+                &[
+                    &language.asset_name("modelpart", &template.model_part_name),
+                    &language.asset_name("model", &template.model_name),
+                ],
+            ),
+            TempType::Scenery | TempType::Model => {
+                let resource = if template.kind == TempType::Scenery { &template.scenery } else { &template.model };
+                match resource.as_id().and_then(|id| self.resource(id)) {
+                    Some(resource) => file_stem(&resource.filename),
+                    None => language.text(&format!("type{}", template.kind.name()), &[]),
+                }
+            }
+            kind => language.text(&format!("type{}", kind.name()), &[]),
+        }
+    }
+
+    /// Name a timeline is shown with (`tl_update_display_name`): its own
+    /// name, or one derived from its type, model part, block or template.
+    pub fn timeline_display_name(&self, timeline: &Timeline, language: &Language) -> String {
+        if !timeline.name.is_empty() {
+            return timeline.name.clone();
+        }
+        let type_name = || language.text(&format!("type{}", timeline.kind.name()), &[]);
+        if !timeline.part_of.is_null() {
+            return match timeline.kind {
+                TlType::Bodypart if !timeline.model_part_name.is_empty() => {
+                    language.asset_name("modelpart", &timeline.model_part_name)
+                }
+                TlType::Bodypart => language.text("timelineunusedbodypart", &[]),
+                TlType::SpecialBlock => match &timeline.part_model {
+                    Some((model, _)) if !model.is_empty() => language.asset_name("model", model),
+                    _ => type_name(),
+                },
+                TlType::Block => match &timeline.part_block {
+                    Some((block, _)) if !block.is_empty() => language.asset_name("block", block),
+                    _ => type_name(),
+                },
+                _ => type_name(),
+            };
+        }
+        match &timeline.temp {
+            ObjRef::Id(id) => match self.template(id) {
+                Some(template) => self.template_display_name(template, language),
+                None => type_name(),
+            },
+            _ => type_name(),
+        }
     }
 
     /// A save id that no object of the project uses.

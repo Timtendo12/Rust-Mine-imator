@@ -82,25 +82,25 @@ export function Viewport() {
   return (
     <div className="viewport-cell">
       <div className="viewport-bar">
+        <select
+          value={timelineCamera ? "active" : "work"}
+          onChange={(e) => setTimelineCamera(e.target.value === "active")}
+          title="Camera this view looks through"
+        >
+          <option value="work">Work camera</option>
+          <option value="active">Active camera</option>
+        </select>
+        <button className="secondary" onClick={() => void viewportResetCamera()} disabled={timelineCamera}>
+          Reset view
+        </button>
+        <span className="spacer" />
         <label>
-          View
+          Shading
           <select value={mode} onChange={(e) => setMode(e.target.value as ViewMode)}>
             <option value="flat">Flat</option>
             <option value="shaded">Shaded</option>
           </select>
         </label>
-        <label>
-          Camera
-          <select value={timelineCamera ? "active" : "work"} onChange={(e) => setTimelineCamera(e.target.value === "active")}>
-            <option value="work">Work camera</option>
-            <option value="active">Active camera</option>
-          </select>
-        </label>
-        <button className="secondary" onClick={() => void viewportResetCamera()} disabled={timelineCamera}>
-          Reset view
-        </button>
-        <span className="spacer" />
-        <span className="muted">Drag to orbit · Shift or middle drag to pan · wheel to zoom</span>
       </div>
       <div
         className="viewport"

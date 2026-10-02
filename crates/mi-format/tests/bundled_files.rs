@@ -119,3 +119,17 @@ fn bundled_animation_loops_load_and_survive_a_round_trip() {
     assert!(count >= 90, "only {count} loops found");
     println!("{exact} of {count} animation loops round-trip byte for byte");
 }
+
+#[test]
+fn bundled_english_language_loads() {
+    let bytes = fs::read(assets().join("Data/Languages/english.milanguage")).unwrap();
+    let language = mi_format::language::Language::load(&bytes).unwrap();
+    assert!(language.len() > 3000, "{} texts", language.len());
+    assert_eq!(language.get("typechar"), Some("Character"));
+    assert_eq!(language.get("typefolder"), Some("Folder"));
+    assert_eq!(language.asset_name("model", "human"), "Human");
+    // Every timeline type has a name.
+    for kind in mi_core::TlType::ALL {
+        assert!(language.get(&format!("type{}", kind.name())).is_some(), "{}", kind.name());
+    }
+}

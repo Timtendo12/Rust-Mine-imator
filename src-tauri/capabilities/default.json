@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions of the main editor window",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
+  "permissions": ["core:default", "core:window:allow-set-title", "dialog:allow-open", "dialog:allow-save"]
 }

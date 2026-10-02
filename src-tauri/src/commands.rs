@@ -6,7 +6,7 @@ use mi_core::{version, TlType};
 use mi_project::{Project, ProjectContext, ProjectError};
 use serde::Serialize;
 use std::path::Path;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 /// Error returned to the frontend; shown to the user as is.
 #[derive(Debug, thiserror::Error)]
@@ -57,10 +57,34 @@ pub struct TimelineSummary {
     hidden: bool,
 }
 
+/// Background settings shown in the environment section.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentSummary {
+    sky_time: f64,
+    sky_rotation: f64,
+    biome: String,
+    sky_color: String,
+    clouds_color: String,
+    sunlight_color: String,
+    ambient_color: String,
+    night_color: String,
+    twilight: bool,
+    clouds_show: bool,
+    ground_show: bool,
+    fog_show: bool,
+    wind: bool,
+    texture_animation_speed: f64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
     path: Option<String>,
+    /// Name of the render settings preset, empty for custom settings.
+    render_settings: String,
+    render_samples: f64,
+    environment: EnvironmentSummary,
     name: String,
     author: String,
     description: String,
@@ -82,11 +106,30 @@ pub struct ProjectSummary {
     warnings: Vec<String>,
 }
 
-fn summarize(project: &Project, warnings: Vec<String>) -> ProjectSummary {
+fn summarize(project: &Project, language: &mi_format::language::Language, warnings: Vec<String>) -> ProjectSummary {
     let file = project.file();
     let timelines = project.timelines();
+    let background = &file.background;
     ProjectSummary {
         path: project.path().map(|p| p.to_string_lossy().into_owned()),
+        render_settings: file.info.render_settings.clone(),
+        render_samples: file.render.samples,
+        environment: EnvironmentSummary {
+            sky_time: background.sky_time,
+            sky_rotation: background.sky_rotation,
+            biome: background.biome.clone(),
+            sky_color: background.sky_color.to_hex(),
+            clouds_color: background.sky_clouds_color.to_hex(),
+            sunlight_color: background.sunlight_color.to_hex(),
+            ambient_color: background.ambient_color.to_hex(),
+            night_color: background.night_color.to_hex(),
+            twilight: background.twilight,
+            clouds_show: background.sky_clouds_show,
+            ground_show: background.ground_show,
+            fog_show: background.fog_show,
+            wind: background.wind,
+            texture_animation_speed: background.texture_animation_speed,
+        },
         name: file.info.name.clone(),
         author: file.info.author.clone(),
         description: file.info.description.clone(),
@@ -109,7 +152,7 @@ fn summarize(project: &Project, warnings: Vec<String>) -> ProjectSummary {
                 let tl = &timelines[i];
                 TimelineSummary {
                     id: tl.id.to_string(),
-                    name: tl.name.clone(),
+                    name: project.timeline_display_name(tl, language),
                     kind: tl.kind.name(),
                     depth: project.tree().depth(i),
                     keyframes: tl.keyframes.iter().map(|k| k.position).collect(),
@@ -127,11 +170,59 @@ pub fn startup_project(state: State<'_, AppState>) -> Option<String> {
     state.take_startup_path()
 }
 
+/// Folders the recent list is read from and written to: the application's
+/// data folder and the user's home folder (for an installation of the
+/// original program).
+fn recent_dirs(app: &AppHandle) -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+    (app.path().app_data_dir().ok(), app.path().home_dir().ok())
+}
+
+/// The recent projects for the startup screen.
+#[tauri::command]
+pub fn recent_projects(app: AppHandle) -> Vec<crate::recent::RecentItem> {
+    let (data, home) = recent_dirs(&app);
+    match data {
+        Some(data) => crate::recent::items(&crate::recent::load(&data, home.as_deref())),
+        None => Vec::new(),
+    }
+}
+
+/// Removes a project from the recent list (the file itself is not touched).
+#[tauri::command]
+pub fn forget_recent_project(filename: String, app: AppHandle) -> Vec<crate::recent::RecentItem> {
+    let (data, home) = recent_dirs(&app);
+    let Some(data) = data else { return Vec::new() };
+    let mut list = crate::recent::load(&data, home.as_deref());
+    if list.remove(&filename) {
+        if let Err(error) = crate::recent::save(&data, &list) {
+            eprintln!("Could not save the recent list: {error}");
+        }
+    }
+    crate::recent::items(&list)
+}
+
+/// Closes the current project and returns to the startup screen.
+#[tauri::command]
+pub fn close_project(state: State<'_, AppState>) {
+    *state.project() = None;
+    state.redraw();
+}
+
 /// Opens a project file and makes it the current project.
 #[tauri::command]
-pub fn open_project(path: String, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
+pub fn open_project(path: String, app: AppHandle, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
     let (project, warnings) = Project::open(Path::new(&path), ProjectContext::default())?;
-    let summary = summarize(&project, warnings);
+
+    // Remember it. Failing to do so is not a reason to refuse the project.
+    if let (Some(entry), (Some(data), home)) = (crate::recent::entry_for(&project), recent_dirs(&app)) {
+        let mut list = crate::recent::load(&data, home.as_deref());
+        list.add(entry);
+        if let Err(error) = crate::recent::save(&data, &list) {
+            eprintln!("Could not save the recent list: {error}");
+        }
+    }
+
+    let summary = summarize(&project, state.language(), warnings);
     let work_camera = saved_work_camera(&project);
     let marker = summary.marker.min(summary.length as f64);
     *state.project() = Some(project);
@@ -291,7 +382,7 @@ mod tests {
 
     #[test]
     fn summary_lists_timelines_in_tree_order() {
-        let summary = summarize(&project(), vec!["note".to_owned()]);
+        let summary = summarize(&project(), &Default::default(), vec!["note".to_owned()]);
         assert_eq!(summary.name, "Test");
         assert_eq!(summary.length, 30);
         assert_eq!(summary.cameras, 1);

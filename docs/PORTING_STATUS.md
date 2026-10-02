@@ -38,8 +38,8 @@ Legend: **done** · **partial** · **not started**
 | Legacy binary projects (`.mproj`, `.mani`, formats 3–23) | not started | `project_load_legacy*`, needs `legacy.midata` |
 | Legacy `.object`, `.keyframes`, `.particles` | not started | |
 | `settings.midata` (and legacy settings) | not started | |
-| `recent.midata`, thumbnails | not started | |
-| `.milanguage`, `languages.midata` | not started | |
+| `recent.midata` | done | Read, written and seeded from an installation of the original. Writing `thumbnail.png` is not done. |
+| `.milanguage` | done | English loads; switching languages (`languages.midata`, legacy format) not yet |
 | `.mimodel` | not started | |
 | Minecraft version manifest (`<version>.midata`) | not started | |
 | `legacy.midata` | not started | |
@@ -134,7 +134,11 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status | Notes |
 |---|---|---|
-| Application window, start page | partial | Opens a project (dialog, or path argument / double-click), shows project info |
+| Startup screen | partial | Recent projects with thumbnails, sort, remove, browse. No "New project", pinning or list view. |
+| Menu bar | partial | File, Edit, Render, View, Help as in the original; only open, close and navigation work, the rest is shown disabled |
+| Properties panel | partial | Project settings, render, library, environment and resources sections, read-only |
+| Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
+| Shortcut bar | partial | Static hints for the viewport |
 | Timeline (read-only) | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, values of the selected timeline at the current frame. No editing, markers, regions or audio. |
 | Docking panels, pop-out windows | not started | |
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |

@@ -2,6 +2,7 @@
 //! frontend through commands. The frontend only holds view state.
 
 mod commands;
+mod recent;
 mod scene_builder;
 mod state;
 mod viewport;
@@ -14,6 +15,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::from_args(std::env::args().skip(1)))
         .setup(|app| {
+            // Interface texts ship with the program.
+            let language = app
+                .path()
+                .resolve("assets/Data/Languages/english.milanguage", tauri::path::BaseDirectory::Resource)
+                .map_err(|e| e.to_string())
+                .and_then(|path| std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display())))
+                .and_then(|bytes| mi_format::language::Language::load(&bytes).map_err(|e| e.to_string()));
+            match language {
+                Ok(language) => app.state::<state::AppState>().set_language(language),
+                Err(error) => eprintln!("Could not load the language file: {error}"),
+            }
+
             let window = app.get_webview_window("main").ok_or("the main window is missing")?;
             match viewport::start(window.clone()) {
                 Ok(handle) => {
@@ -35,6 +48,9 @@ pub fn run() {
             commands::app_info,
             commands::startup_project,
             commands::open_project,
+            commands::close_project,
+            commands::recent_projects,
+            commands::forget_recent_project,
             commands::evaluate_frame,
             commands::set_viewport_rect,
             commands::viewport_drag,
