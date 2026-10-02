@@ -4,6 +4,7 @@
 pub mod blocks;
 pub mod builder;
 pub mod legacy;
+mod liquid;
 pub mod model_file;
 pub mod nbt;
 pub mod pack;

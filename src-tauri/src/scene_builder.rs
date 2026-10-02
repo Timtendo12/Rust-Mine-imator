@@ -335,8 +335,9 @@ pub fn build_scene(
                     continue;
                 }
                 let scenery = &loaded.scenery;
-                let key = format!("scenery:{resource}:{}:{}", loaded.timelines, loaded.randomize);
-                let meshes = resources.meshes(key, &|| scenery.meshes(pack, loaded.timelines, loaded.randomize));
+                let waves = render.liquid_animation;
+                let key = format!("scenery:{resource}:{}:{}:{waves}", loaded.timelines, loaded.randomize);
+                let meshes = resources.meshes(key, &|| scenery.meshes(pack, loaded.timelines, loaded.randomize, waves));
 
                 let size = loaded.size();
                 let repeat = if template.block_repeat_enable {
@@ -694,7 +695,7 @@ mod tests {
 
         let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store) };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
-        assert_eq!(recorder.keys, ["scenery:RES:true:false"]);
+        assert_eq!(recorder.keys, ["scenery:RES:true:false:true"]);
         // One texture, two copies along Y.
         assert_eq!(scene.objects.len(), 2);
         let m = glam::Mat4::from_cols_array(&scene.objects[0].model);

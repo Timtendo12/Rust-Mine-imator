@@ -323,7 +323,7 @@ impl Scenery {
     /// Meshes of the scenery grouped by texture. With `timelines`, blocks
     /// that are placed as timelines (chests, doors, ...) are left out, as
     /// the project draws them itself.
-    pub fn meshes(&self, pack: &AssetPack, timelines: bool, randomize: bool) -> Vec<(String, MeshData)> {
+    pub fn meshes(&self, pack: &AssetPack, timelines: bool, randomize: bool, liquid_animation: bool) -> Vec<(String, MeshData)> {
         let blocks = pack.blocks();
         // Blocks missing from the pack become air.
         let mut index = Vec::with_capacity(self.palette.len());
@@ -332,7 +332,7 @@ impl Scenery {
             match blocks.def(&entry.block) {
                 Some(def) => {
                     index.push(Some(palette.len()));
-                    palette.push(GridBlock { def, state: entry.state.clone() });
+                    palette.push(GridBlock { def, state: entry.state.clone(), waterlogged: entry.waterlogged });
                 }
                 None => index.push(None),
             }
@@ -345,6 +345,7 @@ impl Scenery {
             source: GridSource { scenery: true, legacy: self.legacy },
             randomize,
             skip_timelines: timelines,
+            liquid_animation,
         };
         build_grid(pack, &grid)
     }
@@ -460,7 +461,7 @@ mod tests {
         assert_eq!(scenery.get([0, 0, 1]).unwrap().block, "glass");
         assert!(scenery.get([1, 0, 0]).is_none());
 
-        let meshes = scenery.meshes(&pack, true, false);
+        let meshes = scenery.meshes(&pack, true, false, true);
         let triangles = |name: &str| meshes.iter().find(|(n, _)| n == name).map_or(0, |(_, m)| m.triangle_count());
         // The glass hides nothing of the stone, the stone hides the
         // bottom of the glass.

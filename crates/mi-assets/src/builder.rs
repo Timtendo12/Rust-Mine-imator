@@ -13,6 +13,7 @@
 //! Modern schematics and structures keep their saved states.
 
 use crate::blocks::{block_mesh, face_culled, pick_weighted, position_hash, Depth, Dir, PlacedBlock, RandomOffset};
+use crate::liquid::{liquid_mesh, LiquidSurroundings};
 use crate::{AssetPack, BlockDef, Blocks, RenderModel};
 use mi_mesh::MeshData;
 use std::collections::HashMap;
@@ -34,6 +35,8 @@ pub struct GridSource {
 pub struct GridBlock<'a> {
     pub def: &'a BlockDef,
     pub state: Vec<(String, String)>,
+    /// Holds water besides the block itself.
+    pub waterlogged: bool,
 }
 
 /// A grid of blocks to build.
@@ -46,6 +49,9 @@ pub struct Grid<'a> {
     pub randomize: bool,
     /// Leave out blocks that the project shows as timelines.
     pub skip_timelines: bool,
+    /// Whether liquids wave (`liquid_animation`), which changes which of
+    /// their sides are drawn.
+    pub liquid_animation: bool,
 }
 
 type State = Vec<(String, String)>;
@@ -723,6 +729,34 @@ pub fn build_grid(pack: &AssetPack, grid: &Grid) -> Vec<(String, MeshData)> {
         }
     }
 
+    // Liquids take their shape from the levels and faces around them.
+    let solid_face = |q: [i64; 3], side: Dir| -> bool {
+        if (0..3).any(|i| q[i] < 0 || q[i] >= size[i] as i64) {
+            return false;
+        }
+        let id = cells[index(q)];
+        if id >= LATER {
+            return false;
+        }
+        store.list[id as usize]
+            .face_model(position_hash(q, 0), grid.randomize)
+            .is_some_and(|m| m.face_full[side as usize] && m.face_min_depth[side as usize] == Some(Depth::Opaque))
+    };
+    let waterlogged_at = |q: [i64; 3]| block_at(grid, q).is_some_and(|b| b.waterlogged);
+    let liquid = |def: &BlockDef, p: [i64; 3], level: i64, waterlogged: bool, out: &mut HashMap<String, MeshData>| {
+        let level_at = |q: [i64; 3]| {
+            let b = block_at(grid, q).filter(|b| b.def.name == def.name)?;
+            Some(value(&b.state, "level").parse::<i64>().unwrap_or(0))
+        };
+        let surroundings = LiquidSurroundings {
+            level_at: &level_at,
+            waterlogged_at: &waterlogged_at,
+            solid_face: &solid_face,
+            animation: grid.liquid_animation,
+        };
+        liquid_mesh(&def.name, p, level, waterlogged, def.emissive, &surroundings, out);
+    };
+
     // Generate. Blocks resolved in step 2 keep hiding nothing, as in the
     // original, so their placements are looked up separately.
     let mut late: HashMap<usize, u32> = resolved.into_iter().collect();
@@ -741,6 +775,16 @@ pub fn build_grid(pack: &AssetPack, grid: &Grid) -> Vec<(String, MeshData)> {
                     id => id,
                 };
                 let placement = &store.list[id as usize];
+                if let Some(block) = block_at(grid, p) {
+                    if block.def.kind == "liquid" {
+                        let level = value(&block.state, "level").parse().unwrap_or(0);
+                        liquid(block.def, p, level, false, &mut out);
+                    } else if block.waterlogged {
+                        if let Some(water) = blocks.def("water") {
+                            liquid(water, p, 0, true, &mut out);
+                        }
+                    }
+                }
                 if placement.parts.is_empty() {
                     continue;
                 }
@@ -806,7 +850,7 @@ impl Blocks {
         size: [usize; 3],
         randomize: bool,
     ) -> Vec<(String, MeshData)> {
-        let palette = [GridBlock { def: block, state: state.to_vec() }];
+        let palette = [GridBlock { def: block, state: state.to_vec(), waterlogged: false }];
         let grid = Grid {
             size,
             palette: &palette,
@@ -814,6 +858,7 @@ impl Blocks {
             source: GridSource::default(),
             randomize,
             skip_timelines: false,
+            liquid_animation: true,
         };
         build_grid(pack, &grid)
     }
@@ -830,7 +875,7 @@ mod tests {
 
     fn block<'a>(pack: &'a AssetPack, name: &str, pairs: &[(&str, &str)]) -> GridBlock<'a> {
         let def = pack.blocks().def(name).unwrap();
-        GridBlock { def, state: from_pairs(def, pairs) }
+        GridBlock { def, state: from_pairs(def, pairs), waterlogged: false }
     }
 
     /// A grid from a list of blocks at positions.
@@ -853,8 +898,15 @@ mod tests {
 
         fn with<R>(&self, source: GridSource, f: impl FnOnce(&Grid) -> R) -> R {
             let cell = |p: [usize; 3]| self.at.iter().find(|(q, _)| *q == p).map(|(_, i)| *i);
-            let grid =
-                Grid { size: self.size, palette: &self.palette, cell: &cell, source, randomize: false, skip_timelines: false };
+            let grid = Grid {
+                size: self.size,
+                palette: &self.palette,
+                cell: &cell,
+                source,
+                randomize: false,
+                skip_timelines: false,
+                liquid_animation: true,
+            };
             f(&grid)
         }
     }
@@ -969,7 +1021,7 @@ mod tests {
         assert!((off[0] - 76.0 / 255.0).abs() < 1e-6 && off_light == 0.0);
         assert_eq!((on[0], on_light), (1.0, 1.0));
         // A wire that connects to nothing shows the cross.
-        let layout = Layout::new([2, 1, 1]).put([0, 0, 0], GridBlock { def, state: from_pairs(def, &[]) });
+        let layout = Layout::new([2, 1, 1]).put([0, 0, 0], GridBlock { def, state: from_pairs(def, &[]), waterlogged: false });
         let wire = generate_at(&layout, LEGACY, [0, 0, 0], Default::default());
         assert_eq!(value(&wire, "north"), "side");
     }
@@ -984,5 +1036,68 @@ mod tests {
         let row = Layout::new([3, 1, 1]).put([0, 0, 0], fence()).put([1, 0, 0], fence()).put([2, 0, 0], fence());
         let apart = Layout::new([5, 1, 1]).put([0, 0, 0], fence()).put([2, 0, 0], fence()).put([4, 0, 0], fence());
         assert!(triangles(&row) > triangles(&apart), "{} {}", triangles(&row), triangles(&apart));
+    }
+
+    fn meshes_of(pack: &AssetPack, layout: &Layout) -> HashMap<String, MeshData> {
+        layout.with(LEGACY, |grid| build_grid(pack, grid)).into_iter().collect()
+    }
+
+    fn top_z(mesh: &MeshData) -> f32 {
+        mesh.vertices.iter().map(|v| v.position[2]).fold(f32::MIN, f32::max)
+    }
+
+    #[test]
+    fn still_water_sits_below_the_top() {
+        let pack = pack();
+        let water = || block(&pack, "water", &[("level", "0")]);
+        let one = meshes_of(&pack, &Layout::new([1, 1, 1]).put([0, 0, 0], water()));
+        assert_eq!(top_z(&one["block/water_still"]), 14.0);
+        // Four sides of two triangles plus a corner triangle each.
+        assert_eq!(one["block/water_flow"].triangle_count(), 12);
+        // Top (four triangles) and bottom (two).
+        assert_eq!(one["block/water_still"].triangle_count(), 6);
+
+        // Neighbouring water hides the side between them.
+        let pool = meshes_of(&pack, &Layout::new([2, 1, 1]).put([0, 0, 0], water()).put([1, 0, 0], water()));
+        assert_eq!(pool["block/water_flow"].triangle_count(), 18);
+
+        // Water under water fills its block and has no top.
+        let column = meshes_of(&pack, &Layout::new([1, 1, 2]).put([0, 0, 0], water()).put([0, 0, 1], water()));
+        assert_eq!(top_z(&column["block/water_still"]), 30.0);
+        let lower_sides = column["block/water_flow"].vertices.iter().filter(|v| v.position[2] <= 16.0).count();
+        assert!(lower_sides > 0);
+    }
+
+    #[test]
+    fn water_flows_down_towards_lower_levels() {
+        let pack = pack();
+        let layout = Layout::new([2, 1, 1])
+            .put([0, 0, 0], block(&pack, "water", &[("level", "1")]))
+            .put([1, 0, 0], block(&pack, "water", &[("level", "4")]));
+        let meshes = meshes_of(&pack, &layout);
+        // Both tops flow, so no still texture is used for them.
+        assert!(!meshes.contains_key("block/water_still"), "{:?}", meshes.keys().collect::<Vec<_>>());
+        // The surface slopes: lower towards the higher level number.
+        let flow = &meshes["block/water_flow"];
+        let z_at = |x: f32| {
+            flow.vertices.iter().filter(|v| v.position[0] == x).map(|v| v.position[2]).fold(f32::MIN, f32::max)
+        };
+        assert!(z_at(0.0) > z_at(32.0), "{} {}", z_at(0.0), z_at(32.0));
+    }
+
+    #[test]
+    fn waterlogged_blocks_hold_water_and_lava_glows() {
+        let pack = pack();
+        let mut stairs = block(&pack, "stairs", &[("half", "bottom")]);
+        stairs.waterlogged = true;
+        let meshes = meshes_of(&pack, &Layout::new([1, 1, 1]).put([0, 0, 0], stairs));
+        let water = &meshes["block/water_flow"];
+        // The sides are pulled in a little.
+        let max_x = water.vertices.iter().map(|v| v.position[0]).fold(f32::MIN, f32::max);
+        assert!((max_x - 15.95).abs() < 1e-4, "{max_x}");
+        assert!(meshes.keys().any(|k| k.contains("planks")));
+
+        let lava = meshes_of(&pack, &Layout::new([1, 1, 1]).put([0, 0, 0], block(&pack, "lava", &[])));
+        assert!(lava["block/lava_still"].vertices.iter().all(|v| v.custom[2] == 1.0));
     }
 }

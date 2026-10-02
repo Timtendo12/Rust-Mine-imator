@@ -19,7 +19,7 @@ fn scenery_fixtures_load_and_mesh() {
         let start = std::time::Instant::now();
         let scenery = Scenery::read(&bytes, extension, pack.blocks(), &legacy, Default::default()).unwrap();
         let read = start.elapsed();
-        let meshes = scenery.meshes(&pack, true, true);
+        let meshes = scenery.meshes(&pack, true, true, true);
         let triangles: usize = meshes.iter().map(|(_, m)| m.triangle_count()).sum();
         eprintln!(
             "{}: size {:?}, {} palette entries, {} timeline blocks, {} textures, {triangles} triangles (read {read:?}, total {:?})",
