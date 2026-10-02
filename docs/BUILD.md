@@ -36,3 +36,13 @@ these tests tell you whether the original would still produce the same bytes.
 The `assets/` folder is a copy of `GmProject/datafiles` from the original repository (without the
 Windows-only DLLs). `assets/Data/Minecraft/<version>.zip` and `.midata` are the Minecraft asset pack
 and its manifest.
+
+## Checking a render without the window
+
+`src-tauri/src/render_check.rs` renders a project to a PNG with the viewport's own scene builder and renderer:
+
+```
+MI_RENDER_PROJECT=<file.miproject> MI_RENDER_OUT=<file.png> cargo test -p mine-imator --lib render_check
+```
+
+Optional variables choose the frame, the camera, timelines to outline and a pixel to pick; they are listed at the top of that file. Without `MI_RENDER_PROJECT` the test does nothing.

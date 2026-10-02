@@ -28,3 +28,5 @@ tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 thiserror = { workspace = true }
 
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

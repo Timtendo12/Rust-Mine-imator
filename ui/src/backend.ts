@@ -253,3 +253,6 @@ export const newProject = () => invoke<ProjectSummary>("new_project");
  */
 export const viewportPick = (x: number, y: number, exact: boolean, selected: string | null) =>
   invoke<string | null>("viewport_pick", { x, y, exact, selected });
+
+/** Tells the backend what is selected, so the viewport can outline it. */
+export const setSelection = (timelines: string[]) => invoke<void>("set_selection", { timelines });

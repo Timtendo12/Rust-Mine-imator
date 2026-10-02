@@ -112,7 +112,7 @@ Legend: **done** · **partial** · **not started**
 | Scenery | done (with repeat) |
 | Items, text, paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
-| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box). Not yet: selection outline, gizmos, grid, overlays |
+| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. Not yet: gizmos, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
 | Work camera: fly mode (right drag + keys) | not started |
 | Timeline cameras (active camera view, FOV, orbit) | done |

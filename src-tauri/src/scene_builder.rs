@@ -29,6 +29,8 @@ pub struct SceneInputs<'a> {
     pub pack: Option<&'a AssetPack>,
     pub bindings: Option<&'a ModelBindings>,
     pub scenery: Option<&'a SceneryStore>,
+    /// Selected timelines; they and everything below them get an outline.
+    pub selected: &'a [mi_core::SaveId],
 }
 
 /// How a viewport shows the scene (`e_view_mode`, without the high quality
@@ -384,8 +386,23 @@ pub fn build_scene(
             }
             _ => {}
         }
+        // Children of a selected timeline are outlined with it
+        // (`parent_is_selected`).
+        let selected = !inputs.selected.is_empty() && {
+            let mut current = Some(order[node_index]);
+            let mut found = false;
+            while let Some(index) = current {
+                if inputs.selected.contains(&timelines[index].id) {
+                    found = true;
+                    break;
+                }
+                current = project.tree().parent(index);
+            }
+            found
+        };
         for object in &mut objects[first_object..] {
             object.pick = order[node_index] as u32 + 1;
+            object.selected = selected && !object.pick_only;
         }
     }
 
@@ -647,7 +664,7 @@ mod tests {
         let bindings = ModelBindings::bind(&project, &pack);
         assert_eq!(bindings.len(), 3);
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[] };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         // Ground plus the shapes of three parts, all textured.
         assert!(scene.objects.len() > 4, "{}", scene.objects.len());
@@ -677,7 +694,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[] };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys.len(), 1);
         assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
@@ -725,7 +742,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store) };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[] };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys, ["scenery:RES:true:false:true"]);
         // One texture, two copies along Y.

@@ -55,3 +55,12 @@ fn fs_main(in: VertexOutput) -> @location(0) u32 {
     }
     return u32(object.flags.w + 0.5);
 }
+
+// The selection mask: selected objects cover their pixels.
+@fragment
+fn fs_mask(in: VertexOutput) -> @location(0) vec4<f32> {
+    if (in.alpha * textureSample(base_texture, base_sampler, in.uv).a == 0.0) {
+        discard;
+    }
+    return vec4<f32>(1.0);
+}

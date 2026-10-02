@@ -2126,6 +2126,7 @@ name = "mine-imator"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "image",
  "mi-anim",
  "mi-assets",
  "mi-core",

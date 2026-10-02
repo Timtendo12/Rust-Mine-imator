@@ -473,3 +473,10 @@ pub fn viewport_pick(
     }
     Ok(Some(project.timelines()[index].id.to_string()))
 }
+
+/// Tells the backend which timelines are selected, for the outline in the
+/// viewport.
+#[tauri::command]
+pub fn set_selection(timelines: Vec<String>, state: State<'_, AppState>) {
+    state.set_selection(timelines.iter().map(mi_core::SaveId::new).collect());
+}

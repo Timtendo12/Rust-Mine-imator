@@ -68,6 +68,8 @@ pub struct RenderObject {
     pub pick: u32,
     /// Only there to be clicked (the boxes of lights and cameras).
     pub pick_only: bool,
+    /// Part of the selection, which gets an outline.
+    pub selected: bool,
 }
 
 impl RenderObject {
@@ -88,6 +90,7 @@ impl RenderObject {
             backfaces: false,
             pick: 0,
             pick_only: false,
+            selected: false,
         }
     }
 }

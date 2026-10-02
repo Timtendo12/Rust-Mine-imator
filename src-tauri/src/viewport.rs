@@ -146,6 +146,17 @@ impl SceneResources for Resources<'_> {
     }
 }
 
+/// Resources for building a scene outside the viewport, in tests.
+#[cfg(test)]
+pub(crate) fn render_resources<'a>(renderer: &'a mut Renderer, cache: &'a mut RenderCache) -> impl SceneResources + 'a {
+    Resources { renderer, cache: &mut cache.0 }
+}
+
+/// The viewport's cache of uploaded meshes and textures.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct RenderCache(Cache);
+
 struct RenderThread {
     window: WebviewWindow,
     surface: wgpu::Surface<'static>,
@@ -225,7 +236,9 @@ impl RenderThread {
                 if view.use_timeline_camera { ViewCamera::Active(view.work_camera) } else { ViewCamera::Work(view.work_camera) };
             let bindings = state.bindings();
             let scenery = state.scenery();
-            let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref() };
+            let selected = state.selection();
+            let inputs =
+                SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref(), selected: &selected };
             let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
             build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
         });

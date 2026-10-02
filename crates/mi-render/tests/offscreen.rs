@@ -273,3 +273,27 @@ fn picking_finds_the_nearest_object_under_a_pixel() {
         assert_eq!(renderer.pick(&s, SIZE, SIZE, SIZE / 2, SIZE / 2).unwrap(), Some(1));
     }
 }
+
+#[test]
+fn selected_objects_get_a_white_border() {
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+    let red = [1.0, 0.0, 0.0, 1.0];
+    let white = [255, 255, 255, 255];
+    let count_white = |image: &[u8]| image.chunks_exact(4).filter(|p| *p == white).count();
+
+    let plain = render(&gpu, &mut renderer, &scene(vec![flat(cube, translation(0.0, 0.0, 0.0), red)]));
+    assert_eq!(count_white(&plain), 0);
+
+    let mut selected = flat(cube, translation(0.0, 0.0, 0.0), red);
+    selected.selected = true;
+    let image = render(&gpu, &mut renderer, &scene(vec![selected]));
+    // The object itself is untouched and the border is around it.
+    assert_eq!(centre(&image), [255, 0, 0, 255]);
+    assert!(count_white(&image) > 50, "{}", count_white(&image));
+    // Walking left from the centre: red, then the border, then sky.
+    let row: Vec<[u8; 4]> = (0..SIZE / 2).rev().map(|x| pixel(&image, x, SIZE / 2)).collect();
+    let first_other = row.iter().position(|p| *p != [255, 0, 0, 255]).unwrap();
+    assert_eq!(row[first_other], white);
+    assert_eq!(*row.last().unwrap(), SKY);
+}

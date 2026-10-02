@@ -12,6 +12,28 @@ use wgpu::util::DeviceExt;
 /// Depth buffer format used by all passes.
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// Format of the selection mask.
+const MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+
+/// Colour of the outline around the selection (`shader_border_set`).
+const SELECTION_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BorderUniform {
+    viewport: [f32; 4],
+    color: [f32; 4],
+}
+
+/// The selection mask of a viewport size, with what draws its border.
+struct SelectionMask {
+    width: u32,
+    height: u32,
+    view: wgpu::TextureView,
+    depth: wgpu::TextureView,
+    bind: wgpu::BindGroup,
+}
+
 /// Format of the pick pass: one object id per pixel.
 const PICK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 
@@ -75,6 +97,14 @@ impl ObjectUniform {
     }
 }
 
+/// What a geometry pipeline writes.
+#[derive(Clone, Copy)]
+enum Pass {
+    World,
+    Pick,
+    Mask,
+}
+
 struct GpuMesh {
     buffer: wgpu::Buffer,
     vertex_count: u32,
@@ -96,6 +126,12 @@ pub struct Renderer {
     pipeline_two_sided: wgpu::RenderPipeline,
     pick_cull: wgpu::RenderPipeline,
     pick_two_sided: wgpu::RenderPipeline,
+    mask_cull: wgpu::RenderPipeline,
+    mask_two_sided: wgpu::RenderPipeline,
+    border_pipeline: wgpu::RenderPipeline,
+    border_layout: wgpu::BindGroupLayout,
+    border_buffer: wgpu::Buffer,
+    mask: Option<SelectionMask>,
     /// 1×1 targets of the pick pass and the buffer it is read into.
     pick_target: (wgpu::Texture, wgpu::TextureView, wgpu::TextureView, wgpu::Buffer),
     frame_buffer: wgpu::Buffer,
@@ -242,11 +278,11 @@ impl Renderer {
             label: Some("pick shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pick.wgsl").into()),
         });
-        let pipeline = |cull_mode: Option<wgpu::Face>, label: &str, picking: bool| {
-            let (shader, format, blend) = if picking {
-                (&pick_shader, PICK_FORMAT, None)
-            } else {
-                (&shader, target_format, Some(wgpu::BlendState::ALPHA_BLENDING))
+        let pipeline = |cull_mode: Option<wgpu::Face>, label: &str, pass: Pass| {
+            let (shader, entry, format, blend) = match pass {
+                Pass::World => (&shader, "fs_main", target_format, Some(wgpu::BlendState::ALPHA_BLENDING)),
+                Pass::Pick => (&pick_shader, "fs_main", PICK_FORMAT, None),
+                Pass::Mask => (&pick_shader, "fs_mask", MASK_FORMAT, None),
             };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
@@ -278,7 +314,7 @@ impl Renderer {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some(entry),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
                 }),
@@ -286,10 +322,70 @@ impl Renderer {
                 cache: None,
             })
         };
-        let pipeline_cull = pipeline(Some(wgpu::Face::Back), "world, culled", false);
-        let pipeline_two_sided = pipeline(None, "world, two-sided", false);
-        let pick_cull = pipeline(Some(wgpu::Face::Back), "pick, culled", true);
-        let pick_two_sided = pipeline(None, "pick, two-sided", true);
+        let pipeline_cull = pipeline(Some(wgpu::Face::Back), "world, culled", Pass::World);
+        let pipeline_two_sided = pipeline(None, "world, two-sided", Pass::World);
+        let pick_cull = pipeline(Some(wgpu::Face::Back), "pick, culled", Pass::Pick);
+        let pick_two_sided = pipeline(None, "pick, two-sided", Pass::Pick);
+        let mask_cull = pipeline(Some(wgpu::Face::Back), "mask, culled", Pass::Mask);
+        let mask_two_sided = pipeline(None, "mask, two-sided", Pass::Mask);
+
+        // The border around the selection, drawn over the finished view.
+        let border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("border shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/border.wgsl").into()),
+        });
+        let border_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("border"),
+            entries: &[
+                uniform_entry(false, size_of::<BorderUniform>(), wgpu::ShaderStages::FRAGMENT),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let border_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("border"),
+            bind_group_layouts: &[&border_layout],
+            push_constant_ranges: &[],
+        });
+        let border_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("border"),
+            layout: Some(&border_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &border_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &border_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+            cache: None,
+        });
+        let border_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("border uniforms"),
+            size: size_of::<BorderUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let pick_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pick target"),
             size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
@@ -346,6 +442,12 @@ impl Renderer {
             pipeline_two_sided,
             pick_cull,
             pick_two_sided,
+            mask_cull,
+            mask_two_sided,
+            border_pipeline,
+            border_layout,
+            border_buffer,
+            mask: None,
             pick_target: (pick_texture, pick_view, pick_depth, pick_buffer),
             frame_buffer,
             frame_bind,
@@ -624,7 +726,103 @@ impl Renderer {
                 pass.draw(0..mesh.vertex_count, 0..1);
             }
         }
+
+        if drawable.iter().any(|o| o.selected) {
+            self.outline_selection(&mut encoder, color, viewport, &drawable);
+        }
         self.queue.submit([encoder.finish()]);
+    }
+
+    /// Draws a border around the selected objects (`render_select`): they
+    /// are drawn into a mask, and pixels just outside it get the colour.
+    fn outline_selection(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        viewport: Viewport,
+        drawable: &[&RenderObject],
+    ) {
+        if !self.mask.as_ref().is_some_and(|m| m.width == viewport.width && m.height == viewport.height) {
+            let texture = |label, format, usage| {
+                self.device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        label: Some(label),
+                        size: wgpu::Extent3d { width: viewport.width, height: viewport.height, depth_or_array_layers: 1 },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage,
+                        view_formats: &[],
+                    })
+                    .create_view(&wgpu::TextureViewDescriptor::default())
+            };
+            let attachment = wgpu::TextureUsages::RENDER_ATTACHMENT;
+            let view = texture("selection mask", MASK_FORMAT, attachment | wgpu::TextureUsages::TEXTURE_BINDING);
+            let depth = texture("selection depth", DEPTH_FORMAT, attachment);
+            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("border"),
+                layout: &self.border_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.border_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
+                ],
+            });
+            self.mask = Some(SelectionMask { width: viewport.width, height: viewport.height, view, depth, bind });
+        }
+        let Some(mask) = &self.mask else { return };
+        let uniform = BorderUniform {
+            viewport: [viewport.x as f32, viewport.y as f32, viewport.width as f32, viewport.height as f32],
+            color: SELECTION_COLOR,
+        };
+        self.queue.write_buffer(&self.border_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("selection mask"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &mask.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &mask.depth,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_bind_group(0, &self.frame_bind, &[]);
+            for (i, object) in drawable.iter().enumerate().filter(|(_, o)| o.selected) {
+                let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
+                let pipeline = if object.backfaces { &self.mask_two_sided } else { &self.mask_cull };
+                let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(1, &self.object_bind, &[(i as u64 * self.object_stride) as u32]);
+                pass.set_bind_group(2, texture, &[]);
+                pass.set_vertex_buffer(0, mesh.buffer.slice(..));
+                pass.draw(0..mesh.vertex_count, 0..1);
+            }
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("selection border"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_viewport(viewport.x as f32, viewport.y as f32, viewport.width as f32, viewport.height as f32, 0.0, 1.0);
+        pass.set_scissor_rect(viewport.x, viewport.y, viewport.width, viewport.height);
+        pass.set_pipeline(&self.border_pipeline);
+        pass.set_bind_group(0, &mask.bind, &[]);
+        pass.draw(0..3, 0..1);
     }
 }
 

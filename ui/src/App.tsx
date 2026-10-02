@@ -21,6 +21,7 @@ import {
   reparentTimelines,
   saveProject,
   setProjectInfo,
+  setSelection,
   setSetting,
   setTimelinesHidden,
   setTimelineValues,
@@ -95,6 +96,12 @@ export function App() {
       .setTitle(title)
       .catch(() => undefined);
   }, [project]);
+
+  // The viewport outlines the selection.
+  const hasProject = project !== null;
+  useEffect(() => {
+    void setSelection(selected && hasProject ? [selected] : []);
+  }, [selected, hasProject]);
 
   // Settings shown in the properties panel follow every change of the project.
   useEffect(() => {

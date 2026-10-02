@@ -21,6 +21,8 @@ pub struct AppState {
     legacy: OnceLock<LegacyBlocks>,
     /// Scenery of the open project; replaced together with the project.
     scenery: Mutex<Option<SceneryStore>>,
+    /// Timelines selected in the editor, which the viewport outlines.
+    selection: Mutex<Vec<mi_core::SaveId>>,
     startup_path: Mutex<Option<String>>,
 }
 
@@ -129,6 +131,16 @@ impl AppState {
             _ => None,
         };
         *lock(&self.bindings) = bindings;
+    }
+
+    /// The selected timelines.
+    pub fn selection(&self) -> Vec<mi_core::SaveId> {
+        lock(&self.selection).clone()
+    }
+
+    pub fn set_selection(&self, selection: Vec<mi_core::SaveId>) {
+        *lock(&self.selection) = selection;
+        self.redraw();
     }
 
     /// The viewport, once it runs.

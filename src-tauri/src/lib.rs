@@ -4,6 +4,8 @@
 mod commands;
 mod editing;
 mod recent;
+#[cfg(test)]
+mod render_check;
 mod scene_builder;
 mod state;
 mod viewport;
@@ -85,6 +87,7 @@ pub fn run() {
             commands::viewport_reset_camera,
             commands::set_view_options,
             commands::viewport_pick,
+            commands::set_selection,
             editing::set_timeline_values,
             editing::finish_edit,
             editing::move_keyframes,
