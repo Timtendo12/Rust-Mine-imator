@@ -47,7 +47,7 @@ fn every_block_value_has_a_model_with_existing_textures() {
             }
             let chosen: Vec<_> = models.iter().map(|c| &c[0]).collect();
             let mut meshes: HashMap<String, MeshData> = HashMap::new();
-            block_mesh(&chosen, [0.0; 3], 0.0, &|_, _, _| false, &mut meshes);
+            block_mesh(&chosen, [0.0; 3], 0.0, [1.0; 4], &|_, _, _| false, &mut meshes);
             for (texture, mesh) in &meshes {
                 assert_eq!(mesh.vertices.len() % 3, 0);
                 assert!(mesh.vertices.iter().all(|v| v.position.iter().all(|c| c.is_finite())));
@@ -76,7 +76,7 @@ fn a_full_block_covers_its_faces() {
     assert_eq!(models[0][0].face_full, [true; 6]);
 
     let mut meshes = HashMap::new();
-    block_mesh(&[&models[0][0]], [16.0, 0.0, 0.0], 0.0, &|_, _, _| false, &mut meshes);
+    block_mesh(&[&models[0][0]], [16.0, 0.0, 0.0], 0.0, [1.0; 4], &|_, _, _| false, &mut meshes);
     let mesh = &meshes["block/stone"];
     assert_eq!(mesh.triangle_count(), 12);
     let xs: Vec<f32> = mesh.vertices.iter().map(|v| v.position[0]).collect();
@@ -84,7 +84,7 @@ fn a_full_block_covers_its_faces() {
 
     // Hidden sides are left out.
     let mut meshes = HashMap::new();
-    block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|_, _, d| d != mi_assets::Dir::Up, &mut meshes);
+    block_mesh(&[&models[0][0]], [0.0; 3], 0.0, [1.0; 4], &|_, _, d| d != mi_assets::Dir::Up, &mut meshes);
     assert_eq!(meshes["block/stone"].triangle_count(), 2);
 
     let (block, state) = blocks.by_id("minecraft:granite").unwrap();
@@ -104,7 +104,7 @@ fn stairs_follow_their_facing() {
         ]);
         let models = blocks.models(&pack, stairs, &state);
         let mut meshes = HashMap::new();
-        block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|_, _, _| false, &mut meshes);
+        block_mesh(&[&models[0][0]], [0.0; 3], 0.0, [1.0; 4], &|_, _, _| false, &mut meshes);
         // Centre of the upper step.
         let upper: Vec<[f32; 3]> = meshes.values().flat_map(|m| m.vertices.iter().map(|v| v.position)).filter(|p| p[2] > 8.0).collect();
         let n = upper.len() as f32;

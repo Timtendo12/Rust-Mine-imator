@@ -111,6 +111,9 @@ pub struct BlockDef {
     pub model_double: bool,
     /// Always waterlogged (kelp, seagrass).
     pub waterlogged: bool,
+    /// Connects using the faces of its neighbours, so its state is only
+    /// known while the mesh is generated (fences, panes, walls, ...).
+    pub require_models: bool,
     pub random_offset: bool,
     pub random_offset_xy: bool,
     pub states: Vec<(String, Vec<BlockStateValue>)>,
@@ -172,6 +175,7 @@ impl BlockDef {
             timeline: map.object("timeline").is_some(),
             model_double: map.object("timeline").and_then(|t| t.flag("model_double")).unwrap_or(false),
             waterlogged: map.flag("waterlogged").unwrap_or(false),
+            require_models: map.flag("require_models").unwrap_or(false),
             random_offset: map.flag("random_offset").unwrap_or(false),
             random_offset_xy: map.flag("random_offset_xz").unwrap_or(false),
             states,
@@ -801,20 +805,6 @@ impl Blocks {
         }
     }
 
-    /// Meshes of a block in a state repeated `size` times along each axis
-    /// (`temp_update_block`).
-    pub fn grid_meshes(
-        &self,
-        pack: &AssetPack,
-        block: &BlockDef,
-        state: &[(String, String)],
-        size: [usize; 3],
-        randomize: bool,
-    ) -> Vec<(String, MeshData)> {
-        let placed = [self.placed(pack, block, state)];
-        grid_meshes(size, &placed, &|_| Some(0), randomize)
-    }
-
     /// The transparency of a block texture; `None` when it does not exist.
     pub fn texture_depth(&self, pack: &AssetPack, name: &str) -> Option<Depth> {
         if let Some(depth) = self.depths.lock().unwrap_or_else(|e| e.into_inner()).get(name) {
@@ -878,7 +868,7 @@ pub struct PlacedBlock {
 
 /// A small hash of a position, for choices that should look random but
 /// stay the same every time the mesh is built.
-fn position_hash(p: [i64; 3], salt: u64) -> u64 {
+pub(crate) fn position_hash(p: [i64; 3], salt: u64) -> u64 {
     let mut h = (p[0] as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (p[1] as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
         ^ (p[2] as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
@@ -889,78 +879,9 @@ fn position_hash(p: [i64; 3], salt: u64) -> u64 {
     h
 }
 
-/// Meshes of a grid of blocks, grouped by texture (`builder_generate`).
-/// `cell` gives the palette index of the block at a position, or `None`
-/// for air. Faces on the boundary of a block are left out where the
-/// neighbour covers them with a face at least as opaque.
-pub fn grid_meshes(
-    size: [usize; 3],
-    palette: &[PlacedBlock],
-    cell: &dyn Fn([usize; 3]) -> Option<usize>,
-    randomize: bool,
-) -> Vec<(String, MeshData)> {
-    let size = size.map(|s| s.max(1));
-    let total = size[0] * size[1] * size[2];
-    let block_at = |p: [i64; 3]| -> Option<&PlacedBlock> {
-        if (0..3).any(|i| p[i] < 0 || p[i] >= size[i] as i64) {
-            return None;
-        }
-        palette.get(cell([p[0] as usize, p[1] as usize, p[2] as usize])?)
-    };
-
-    let mut out: HashMap<String, MeshData> = HashMap::new();
-    for z in 0..size[2] as i64 {
-        for y in 0..size[1] as i64 {
-            for x in 0..size[0] as i64 {
-                let p = [x, y, z];
-                let Some(block) = block_at(p) else { continue };
-                if block.models.is_empty() {
-                    continue;
-                }
-                let seed = position_hash(p, 0);
-                let here: Vec<&RenderModel> =
-                    block.models.iter().filter_map(|choices| pick_weighted(choices, seed, randomize)).collect();
-                // Multipart blocks do not hide their neighbours' faces, as
-                // in the original.
-                let neighbours = Dir::ALL.map(|dir| {
-                    let s = dir.step();
-                    let n = [p[0] + s[0], p[1] + s[1], p[2] + s[2]];
-                    let other = block_at(n)?;
-                    if other.models.len() != 1 {
-                        return None;
-                    }
-                    pick_weighted(&other.models[0], position_hash(n, 0), randomize)
-                });
-
-                let mut offset = [x as f64 * BLOCK, y as f64 * BLOCK, z as f64 * BLOCK];
-                let offset_xy = match block.offset {
-                    RandomOffset::Xyz => total > 1,
-                    RandomOffset::Xy => size[0] * size[1] > 1,
-                    RandomOffset::None => false,
-                };
-                if offset_xy {
-                    let h = position_hash(p, 1);
-                    offset[0] += (h % 9) as f64 - 4.0;
-                    offset[1] += ((h >> 8) % 9) as f64 - 4.0;
-                    if block.offset == RandomOffset::Xyz {
-                        offset[2] -= ((h >> 16) % 4) as f64;
-                    }
-                }
-                let culled = |model: &RenderModel, element: &RenderElement, dir: Dir| {
-                    face_culled(model, element, dir, neighbours[dir.index()], block.leaves)
-                };
-                block_mesh(&here, offset, block.emissive, &culled, &mut out);
-            }
-        }
-    }
-    let mut meshes: Vec<(String, MeshData)> = out.into_iter().collect();
-    meshes.sort_by(|a, b| a.0.cmp(&b.0));
-    meshes
-}
-
 /// Whether a face on side `dir` of a block is hidden by the neighbour on
 /// that side (`block_render_model_generate_face_cull`).
-fn face_culled(model: &RenderModel, element: &RenderElement, dir: Dir, neighbour: Option<&RenderModel>, leaves: bool) -> bool {
+pub(crate) fn face_culled(model: &RenderModel, element: &RenderElement, dir: Dir, neighbour: Option<&RenderModel>, leaves: bool) -> bool {
     let d = dir.index();
     if !element.faces[d].as_ref().is_some_and(|f| f.edge) {
         return false;
@@ -981,11 +902,13 @@ fn face_culled(model: &RenderModel, element: &RenderElement, dir: Dir, neighbour
 }
 
 /// Faces of a block grouped by texture, positioned at `offset` (in units,
-/// one block is 16). `culled` tells whether a face of an element is hidden.
+/// one block is 16), in a vertex colour. `culled` tells whether a face of
+/// an element is hidden.
 pub fn block_mesh(
     models: &[&RenderModel],
     offset: Vec3,
     emissive: f64,
+    color: [f32; 4],
     culled: &dyn Fn(&RenderModel, &RenderElement, Dir) -> bool,
     out: &mut HashMap<String, MeshData>,
 ) {
@@ -1023,6 +946,12 @@ pub fn block_mesh(
                 let mesh = out.entry(face.texture.clone()).or_default();
                 mesh.triangle_with([p[0], p[1], p[2]], [uv[0], uv[1], uv[2]], None, false, [custom; 3]);
                 mesh.triangle_with([p[2], p[3], p[0]], [uv[2], uv[3], uv[0]], None, false, [custom; 3]);
+                if color != [1.0; 4] {
+                    let n = mesh.vertices.len();
+                    for vertex in &mut mesh.vertices[n - 6..] {
+                        vertex.color = color;
+                    }
+                }
             }
         }
     }

@@ -9,7 +9,7 @@
 use crate::legacy::LegacyBlocks;
 use crate::nbt::{self, Compound, NbtError, Tag};
 use crate::pack::parse_state_vars;
-use crate::{grid_meshes, AssetPack, Blocks, PlacedBlock};
+use crate::{build_grid, AssetPack, Blocks, Grid, GridBlock, GridSource};
 use mi_mesh::MeshData;
 
 /// Largest number of blocks a scenery may hold.
@@ -59,6 +59,9 @@ pub struct Scenery {
     pub palette: Vec<SceneryBlock>,
     /// Name of the map the schematic was taken from, if it says.
     pub file_map: String,
+    /// Read from numeric block ids, so connections between blocks are not
+    /// stored and are worked out when building.
+    pub legacy: bool,
 }
 
 impl Scenery {
@@ -69,7 +72,7 @@ impl Scenery {
         let size = size.map(|s| s as usize);
         let total = size[0].checked_mul(size[1]).and_then(|v| v.checked_mul(size[2]));
         let total = total.filter(|&t| t <= MAX_BLOCKS).ok_or(SceneryError::Invalid("too large"))?;
-        Ok(Self { size, cells: vec![0; total], palette: Vec::new(), file_map: String::new() })
+        Ok(Self { size, cells: vec![0; total], palette: Vec::new(), file_map: String::new(), legacy: false })
     }
 
     fn index(&self, p: [usize; 3]) -> usize {
@@ -161,6 +164,7 @@ impl Scenery {
             }
         } else {
             // MCEdit schematics with numeric ids.
+            scenery.legacy = true;
             let ids = map.bytes("Blocks").ok_or(SceneryError::Invalid("Blocks array not found"))?;
             let data = map.bytes("Data").ok_or(SceneryError::Invalid("Data array not found"))?;
             let mut entries: std::collections::HashMap<(u8, u8), Option<u32>> = Default::default();
@@ -257,6 +261,8 @@ impl Scenery {
         let (size_y, size_x, size_z) = (short(at)?, short(at + 2)?, short(at + 4)?);
         let mut scenery = Self::new([size_x, size_y, size_z])?;
         scenery.file_map = String::from_utf8_lossy(name).into_owned();
+        // The original leaves this flag as the previous file set it.
+        scenery.legacy = true;
 
         let data = &bytes[at + 6..];
         let mut entries: std::collections::HashMap<(u8, u8), Option<u32>> = Default::default();
@@ -319,18 +325,28 @@ impl Scenery {
     /// the project draws them itself.
     pub fn meshes(&self, pack: &AssetPack, timelines: bool, randomize: bool) -> Vec<(String, MeshData)> {
         let blocks = pack.blocks();
-        let palette: Vec<PlacedBlock> = self
-            .palette
-            .iter()
-            .map(|entry| {
-                let Some(def) = blocks.def(&entry.block) else { return PlacedBlock::default() };
-                if timelines && def.timeline && !def.model_double {
-                    return PlacedBlock::default();
+        // Blocks missing from the pack become air.
+        let mut index = Vec::with_capacity(self.palette.len());
+        let mut palette = Vec::new();
+        for entry in &self.palette {
+            match blocks.def(&entry.block) {
+                Some(def) => {
+                    index.push(Some(palette.len()));
+                    palette.push(GridBlock { def, state: entry.state.clone() });
                 }
-                blocks.placed(pack, def, &entry.state)
-            })
-            .collect();
-        grid_meshes(self.size, &palette, &|p| self.cell(p), randomize)
+                None => index.push(None),
+            }
+        }
+        let cell = |p: [usize; 3]| self.cell(p).and_then(|i| index[i]);
+        let grid = Grid {
+            size: self.size,
+            palette: &palette,
+            cell: &cell,
+            source: GridSource { scenery: true, legacy: self.legacy },
+            randomize,
+            skip_timelines: timelines,
+        };
+        build_grid(pack, &grid)
     }
 }
 

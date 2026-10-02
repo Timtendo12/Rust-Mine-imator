@@ -36,6 +36,8 @@ Fixes change behaviour in memory, not the layout on disk, so files stay readable
 | The inverse kinematics solver tests convergence against the wrong joint and so always runs all 30 rounds. | Stops when the end of the limb is on the target. Results are the same. |
 | Models that copy the pose of their parent model stop following paths. | Path following is kept in the pose pass. |
 | The tip of an inverted cone keeps an upward normal, so the inside of the cone is lit wrongly near the tip. | The normal is flipped with the rest. |
+| Walls test whether a wall stands on top of them with the face data of their eastern neighbour, so a wall only grows tall when that neighbour happens to be solid. | The face above is used. |
+| `.blocks` files do not set whether the scenery comes from numeric ids, so whether their stairs and fences connect depends on the file loaded before. | They always count as numeric-id files, which store no connections. |
 | Sponge schematics store palette indices as variable length integers, but the original reads one byte per block, so schematics with more than 128 palette entries load wrong blocks. Versions 2 and 3 are refused. | Indices are decoded properly; versions 1 to 3 are read. |
 
 ## Quirks of the original kept on purpose
