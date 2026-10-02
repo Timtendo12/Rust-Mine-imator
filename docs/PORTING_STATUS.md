@@ -110,7 +110,8 @@ Legend: **done** · **partial** · **not started**
 | Characters and special blocks | done (body parts, textured, bent) |
 | Blocks | done for block templates (with repeat and randomised variants) and block timelines of scenery; one mesh per texture, tinted like the original |
 | Scenery | done (with repeat) |
-| Items, text, paths, particles | not started |
+| Text | partial: text timelines in the Minecraft font (the original's sprite font, shipped as `Data/Fonts/minecraft.png`) with alignment and line breaks. Not yet: other fonts, 3D text, outlines, facing the camera |
+| Items, paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. Not yet: gizmos, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |

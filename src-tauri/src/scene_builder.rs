@@ -31,6 +31,8 @@ pub struct SceneInputs<'a> {
     pub scenery: Option<&'a SceneryStore>,
     /// Selected timelines; they and everything below them get an outline.
     pub selected: &'a [mi_core::SaveId],
+    /// The font of text objects.
+    pub font: Option<&'a mi_assets::SpriteFont>,
 }
 
 /// How a viewport shows the scene (`e_view_mode`, without the high quality
@@ -156,8 +158,8 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
 ///
 /// Drawn so far: shapes, blocks, body parts of characters and special
 /// blocks, the textured ground, the sun, point and spot lights (as point lights, which
-/// is what the low quality modes do), fog and scenery. Items, text and
-/// particles are not drawn yet.
+/// is what the low quality modes do), fog, scenery and text in the
+/// Minecraft font. Items and particles are not drawn yet.
 pub fn build_scene(
     project: &Project,
     inputs: SceneInputs,
@@ -345,6 +347,31 @@ pub fn build_scene(
                 let matrix = block_turn(repeat[1]).then(&node.matrix_render).to_f32();
                 let look = BlockLook { pack, background, inherited, timeline, unlit };
                 push_block_objects(&mut objects, resources, &meshes, matrix, &look);
+            }
+            TlType::Text => {
+                let Some(font) = inputs.font else { continue };
+                if inherited.alpha <= 0.0 {
+                    continue;
+                }
+                let text = match node.values[ValueId::Text].as_str() {
+                    Some(text) if !text.is_empty() => text,
+                    // Projects from before the text became a keyframe value.
+                    _ => timeline.text.as_str(),
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                let align = |id: ValueId| mi_assets::Align::from_name(node.values[id].as_str().unwrap_or("center"));
+                let (halign, valign) = (align(ValueId::TextHalign), align(ValueId::TextValign));
+                let key = format!("text:{halign:?}:{valign:?}:{text}");
+                let image = || mi_assets::text_image(font, text, halign, valign);
+                let mesh = resources.mesh(key.clone(), &|| image().map(|t| mi_assets::text_mesh(&t)).unwrap_or_default());
+                let mut object = RenderObject::new(mesh, node.matrix_render.to_f32());
+                object.texture = resources.texture(key, &|| image().map(|t| t.image));
+                apply_material(&mut object, inherited, Color::WHITE, 1.0);
+                object.unlit = unlit;
+                object.fog = timeline.appearance.fog;
+                objects.push(object);
             }
             TlType::Scenery => {
                 let Some(pack) = inputs.pack else { continue };
@@ -664,7 +691,7 @@ mod tests {
         let bindings = ModelBindings::bind(&project, &pack);
         assert_eq!(bindings.len(), 3);
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[] };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[], font: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         // Ground plus the shapes of three parts, all textured.
         assert!(scene.objects.len() > 4, "{}", scene.objects.len());
@@ -694,7 +721,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[] };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[], font: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys.len(), 1);
         assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
@@ -742,7 +769,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[] };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[], font: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys, ["scenery:RES:true:false:true"]);
         // One texture, two copies along Y.

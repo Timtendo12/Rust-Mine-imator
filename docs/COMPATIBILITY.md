@@ -49,6 +49,7 @@ Changing these would alter how existing projects look.
 | Path lengths are measured about 5% short (a loop meant to sample 0..1 stops at 0.95). | `PATH_OFFSET` keyframes are expressed in these units; correcting the length would move every object that follows a path. |
 | `matrix_build` rotates before it scales. | The timeline transform compensates for it ("resize" scaling); results are the same as in the original. |
 | Blocks with several models, random plant offsets and the integrity of structures use a random number generator seeded by position. | Kept in spirit: the choice is still stable per position, but it comes from a different generator, so the picked variants differ from the original's. |
+| A space in the Minecraft font is 2 pixels wide: the empty glyph counts as 1 pixel plus the 1 pixel between characters. | Texts of existing projects (signs) were laid out with it. |
 | Block templates are drawn turned 90° about Z ("for legacy support"), with the repeat counts of X and Y swapped to match. | Block timelines of existing projects would otherwise point the other way. |
 | With UV lock, a rotated block face takes the texture of the face whose direction it ends up in. | Matches what the original shows for rotated, UV-locked blocks. |
 | The world is left-handed (Z up; +X is to the left when looking along +Y), and a positive Z rotation turns +X towards -Y. | All saved positions and rotations depend on it. It is what makes Minecraft worlds, whose Y and Z are swapped on import, appear unmirrored. |

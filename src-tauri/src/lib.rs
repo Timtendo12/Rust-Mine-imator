@@ -31,6 +31,18 @@ pub fn run() {
                 Err(error) => eprintln!("Could not load the language file: {error}"),
             }
 
+            // The font of text objects.
+            let font = app
+                .path()
+                .resolve("assets/Data/Fonts/minecraft.png", tauri::path::BaseDirectory::Resource)
+                .ok()
+                .and_then(|path| std::fs::read(path).ok())
+                .and_then(|bytes| mi_assets::SpriteFont::minecraft(&bytes));
+            match font {
+                Some(font) => app.state::<state::AppState>().set_font(font),
+                None => eprintln!("Could not load the Minecraft font; text will not be drawn"),
+            }
+
             // The Minecraft assets ship with the program as well.
             let pack = app
                 .path()

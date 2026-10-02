@@ -5,7 +5,8 @@
 //! MI_RENDER_PROJECT=<file.miproject> MI_RENDER_OUT=<file.png> cargo test -p mine-imator --lib render_check
 //! ```
 //!
-//! Optional: `MI_RENDER_FRAME`, `MI_RENDER_FOCUS=x,y,z`, `MI_RENDER_ANGLE`,
+//! Optional: `MI_RENDER_FRAME`, `MI_RENDER_FOCUS=x,y,z` or
+//! `MI_RENDER_LOOK_AT=<save id>`, `MI_RENDER_ANGLE`,
 //! `MI_RENDER_ELEV`, `MI_RENDER_ZOOM` (otherwise the saved work camera is
 //! used), `MI_RENDER_SELECT=<save id or display type>` to outline timelines
 //! and `MI_RENDER_PICK=x,y` to print what a click there picks.
@@ -34,12 +35,24 @@ fn render_check() {
     let mut renderer = Renderer::new(&device, &queue, OffscreenTarget::FORMAT);
 
     let saved = saved_work_camera(&project);
-    let orbit = ["MI_RENDER_FOCUS", "MI_RENDER_ANGLE", "MI_RENDER_ELEV", "MI_RENDER_ZOOM"];
+    let orbit = ["MI_RENDER_FOCUS", "MI_RENDER_LOOK_AT", "MI_RENDER_ANGLE", "MI_RENDER_ELEV", "MI_RENDER_ZOOM"];
     let camera = if orbit.iter().any(|name| std::env::var(name).is_ok()) {
-        let focus = std::env::var("MI_RENDER_FOCUS").ok().map_or(saved.focus, |f| {
-            let v: Vec<f32> = f.split(',').filter_map(|c| c.trim().parse().ok()).collect();
-            glam::Vec3::new(v[0], v[1], v[2])
+        let look_at = std::env::var("MI_RENDER_LOOK_AT").ok().and_then(|id| {
+            let index = project.timeline_index(&mi_core::SaveId::new(&id))?;
+            let (state, order) = project.evaluate_with(
+                env("MI_RENDER_FRAME").unwrap_or(0.0),
+                &|i| bindings.part_info(i),
+                &|resource| scenery.get(resource).map(|s| s.size()),
+            );
+            let node = order.iter().position(|&i| i == index)?;
+            let p = state.nodes[node].world_pos;
+            Some(glam::Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32))
         });
+        let focus = look_at.or_else(|| {
+            let v: Vec<f32> = std::env::var("MI_RENDER_FOCUS").ok()?.split(',').filter_map(|c| c.trim().parse().ok()).collect();
+            Some(glam::Vec3::new(v[0], v[1], v[2]))
+        });
+        let focus = focus.unwrap_or(saved.focus);
         WorkCamera::orbiting(
             focus,
             env("MI_RENDER_ANGLE").unwrap_or(saved.angle_xy),
@@ -64,7 +77,14 @@ fn render_check() {
         })
         .unwrap_or_default();
 
-    let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: Some(&scenery), selected: &selected };
+    let font = mi_assets::SpriteFont::minecraft(&std::fs::read(data.join("Fonts/minecraft.png")).unwrap()).unwrap();
+    let inputs = SceneInputs {
+        pack: Some(&pack),
+        bindings: Some(&bindings),
+        scenery: Some(&scenery),
+        selected: &selected,
+        font: Some(&font),
+    };
     let mut cache = Default::default();
     let frame = env("MI_RENDER_FRAME").unwrap_or(0.0);
     let scene = {

@@ -320,9 +320,9 @@ pub struct FrameState {
     active_camera: Option<String>,
 }
 
-pub(crate) fn frame_state(project: &Project, marker: f64) -> FrameState {
+pub(crate) fn frame_state(project: &Project, marker: f64, state: &AppState) -> FrameState {
     use mi_core::ValueId::*;
-    let (scene, order) = project.evaluate(marker);
+    let (scene, order) = state.evaluate(project, marker);
     let timelines = order
         .iter()
         .zip(&scene.nodes)
@@ -353,7 +353,7 @@ pub fn evaluate_frame(marker: f64, state: State<'_, AppState>) -> Result<FrameSt
     let frame = {
         let guard = state.project();
         let project = guard.as_ref().ok_or(CommandError::NoProject)?;
-        frame_state(project, marker)
+        frame_state(project, marker, &state)
     };
     state.update_view(|view| view.marker = marker);
     Ok(frame)
@@ -459,7 +459,7 @@ mod tests {
     #[test]
     fn frame_state_interpolates_and_inherits() {
         let project = project();
-        let frame = frame_state(&project, 15.0);
+        let frame = frame_state(&project, 15.0, &AppState::default());
         assert_eq!(frame.timelines.len(), 3);
         assert_eq!(frame.timelines[0].world_position, [30.0, 0.0, 0.0]);
         assert_eq!(frame.active_camera.as_deref(), Some("CAMERA0000000000"));

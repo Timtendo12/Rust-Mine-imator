@@ -54,7 +54,7 @@ fn change<R>(state: &AppState, apply: impl FnOnce(&mut Project) -> R) -> Result<
         let ids: Vec<SaveId> = project.timelines().iter().map(|t| t.id.clone()).collect();
         let result = apply(project);
         let reshaped = project.timelines().len() != ids.len() || project.timelines().iter().zip(&ids).any(|(t, id)| &t.id != id);
-        let edited = Edited { project: summarize(project, state.language(), Vec::new()), frame: frame_state(project, marker) };
+        let edited = Edited { project: summarize(project, state.language(), Vec::new()), frame: frame_state(project, marker, state) };
         (result, edited, reshaped)
     };
     // Models and scenery are bound by timeline position.
@@ -395,7 +395,7 @@ pub fn timeline_values(id: String, state: State<'_, AppState>) -> Result<Vec<cra
     let project = guard.as_ref().ok_or(CommandError::NoProject)?;
     let Some(index) = project.timeline_index(&SaveId::new(&id)) else { return Ok(Vec::new()) };
     let has_bend = state.bindings().as_ref().and_then(|b| b.part_info(index)).is_some_and(|part| part.bend.is_some());
-    let (scene, order) = project.evaluate(marker);
+    let (scene, order) = state.evaluate(project, marker);
     let Some(node) = order.iter().position(|&i| i == index) else { return Ok(Vec::new()) };
     Ok(crate::frame_editor::value_groups(project.timelines()[index].kind, has_bend, &scene.nodes[node].values))
 }

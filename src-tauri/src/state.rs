@@ -19,6 +19,8 @@ pub struct AppState {
     bindings: Mutex<Option<ModelBindings>>,
     /// Numeric block ids of old schematics.
     legacy: OnceLock<LegacyBlocks>,
+    /// The Minecraft font text objects are drawn with.
+    font: OnceLock<mi_assets::SpriteFont>,
     /// Scenery of the open project; replaced together with the project.
     scenery: Mutex<Option<SceneryStore>>,
     /// Timelines selected in the editor, which the viewport outlines.
@@ -89,6 +91,14 @@ impl AppState {
         lock(&self.bindings)
     }
 
+    pub fn font(&self) -> Option<&mi_assets::SpriteFont> {
+        self.font.get()
+    }
+
+    pub fn set_font(&self, font: mi_assets::SpriteFont) {
+        let _ = self.font.set(font);
+    }
+
     pub fn set_legacy(&self, legacy: LegacyBlocks) {
         let _ = self.legacy.set(legacy);
     }
@@ -131,6 +141,19 @@ impl AppState {
             _ => None,
         };
         *lock(&self.bindings) = bindings;
+    }
+
+    /// Evaluates the scene of `project` (the open one, which the caller has
+    /// locked) with its bound models and loaded scenery, as the viewport
+    /// does: bends and the rotation points of scenery depend on them.
+    pub fn evaluate(&self, project: &Project, marker: f64) -> (mi_anim::SceneState, Vec<usize>) {
+        let bindings = self.bindings();
+        let scenery = self.scenery();
+        project.evaluate_with(
+            marker,
+            &|i| bindings.as_ref().and_then(|b| b.part_info(i)),
+            &|resource| scenery.as_ref().and_then(|s| s.get(resource)).map(|s| s.size()),
+        )
     }
 
     /// The selected timelines.

@@ -255,7 +255,13 @@ impl RenderThread {
             let scenery = state.scenery();
             let selected = if export_camera.is_some() { Vec::new() } else { state.selection() };
             let inputs =
-                SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref(), selected: &selected };
+                SceneInputs {
+                    pack: state.pack(),
+                    bindings: bindings.as_ref(),
+                    scenery: scenery.as_ref(),
+                    selected: &selected,
+                    font: state.font(),
+                };
             let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
             build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
         });
