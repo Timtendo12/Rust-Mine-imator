@@ -105,7 +105,7 @@ Legend: **done** · **partial** · **not started**
 | Wind, material maps, glint, alpha hashing, alpha-fix pass in the low quality shader | not started |
 | Shapes (cube, cone, cylinder, sphere, surface) with texture mapping options | done (untextured until assets load) |
 | Sun direction, day/night and twilight colours | done |
-| Sky background image, sun and moon discs, stars, clouds | not started |
+| Sky background image, sun and moon discs, stars, clouds | partial: the haze dome at the horizon, stars at night, the sun and the moon (phase, angle, scale) drawn additively, clouds in the normal, flat and faded modes drifting with the animation, the fog colour of `background_sky_update` and the twilight glow towards the rising or setting sun. Not yet: background images (flat, sphere, box), sun, moon and cloud textures of resources |
 | Ground | done: pack texture tinted by biome colour (resource pack ground textures not yet) |
 | Characters and special blocks | done (body parts, textured, bent) |
 | Blocks | done for block templates (with repeat and randomised variants) and block timelines of scenery; one mesh per texture, tinted like the original |

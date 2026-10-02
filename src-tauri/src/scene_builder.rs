@@ -10,7 +10,7 @@ use mi_format::project::{Background, Template};
 use mi_mesh::MeshData;
 use mi_project::{ModelBindings, ModelTextures, Project, SceneryStore};
 use mi_render::camera::CLIP_NEAR;
-use mi_render::scene::{ColorTransform, Fog, PointLight, RenderObject, RenderScene, Tonemapper};
+use mi_render::scene::{ColorTransform, Fog, Layer, PointLight, RenderObject, RenderScene, Tonemapper};
 use mi_render::{ground_mesh, shape_mesh, Camera, MeshId, Shape, ShapeSettings, SkySettings, TextureId, WorkCamera};
 
 /// Meshes and textures the scene needs. The caller keeps what it uploaded
@@ -33,6 +33,8 @@ pub struct SceneInputs<'a> {
     pub selected: &'a [mi_core::SaveId],
     /// The font of text objects.
     pub font: Option<&'a mi_assets::SpriteFont>,
+    /// Draw the sky and the clouds (`render_background`).
+    pub backdrop: bool,
 }
 
 /// How a viewport shows the scene (`e_view_mode`, without the high quality
@@ -97,6 +99,144 @@ fn sky_settings(background: &Background, render_distance: f64) -> SkySettings {
         sky_color: rgb(background.sky_color),
         twilight: background.twilight,
         render_distance: render_distance as f32,
+    }
+}
+
+/// The stars and the haze at the horizon: images of the program itself,
+/// not of the Minecraft assets.
+const STARS_PNG: &[u8] = include_bytes!("../../assets/Data/Textures/stars.png");
+const FOG_PNG: &[u8] = include_bytes!("../../assets/Data/Textures/fog.png");
+
+/// What the sky is drawn from.
+struct SkyLook<'a> {
+    background: &'a Background,
+    sky: SkySettings,
+    camera: &'a Camera,
+    /// `background_fog_color_final`
+    fog_color: [f32; 3],
+    pack: Option<&'a AssetPack>,
+}
+
+/// A backdrop object: unlit, without fog or depth.
+fn backdrop(mesh: MeshId, matrix: mi_anim::Mat4, texture: Option<TextureId>, color: [f32; 4], layer: Layer) -> RenderObject {
+    let mut object = RenderObject::new(mesh, matrix.to_f32());
+    object.texture = texture;
+    object.blend_color = color;
+    object.unlit = true;
+    object.fog = false;
+    object.layer = layer;
+    object
+}
+
+/// The backdrop (`render_world_sky`): the haze at the horizon, the stars,
+/// the sun and the moon, all centred on the camera. The sun, moon and
+/// cloud textures of resource packs are not used yet; the bundled ones are.
+fn push_sky(objects: &mut Vec<RenderObject>, resources: &mut dyn SceneResources, look: &SkyLook) {
+    use mi_anim::Mat4;
+    let background = look.background;
+    let distance = look.sky.render_distance as f64 * 0.75;
+    let from = [look.camera.from.x as f64, look.camera.from.y as f64, look.camera.from.z as f64];
+    // Shape meshes are a block wide; the sky's are made for a radius of 1.
+    let unit = Mat4::scaling([1.0 / mi_mesh::SHAPE_RADIUS as f64; 3]);
+
+    // Haze: a dome whose texture fades out towards the top.
+    if background.fog_show && background.fog_sky {
+        let dome = ShapeSettings { detail: 16, invert: true, ..ShapeSettings::default() };
+        let mesh = resources.mesh("sky:dome".to_owned(), &|| shape_mesh(Shape::Sphere, &dome));
+        let texture = resources.texture("sky:fog".to_owned(), &|| mi_assets::decode_square(FOG_PNG));
+        let glow = look.sky.rise_set_alpha(true).max(look.sky.rise_set_alpha(false)) as f64;
+        let height = background.fog_height / 1000.0;
+        let matrix = unit.then(&Mat4::build(from, [0.0; 3], [distance, distance, distance * (height + height * glow)]));
+        let c = look.fog_color;
+        objects.push(backdrop(mesh, matrix, texture, [c[0], c[1], c[2], 1.0], Layer::Sky));
+    }
+
+    // A background image replaces the sky. (The image itself is not drawn yet.)
+    if background.image_show {
+        return;
+    }
+    let sky_matrix = Mat4::build(from, [-background.sky_time, 0.0, background.sky_rotation], [1.0; 3]);
+
+    let night = look.sky.night_alpha();
+    if night > 0.0 {
+        let stars = ShapeSettings { invert: true, tex_hrepeat: 2.0, tex_vrepeat: 2.0, ..ShapeSettings::default() };
+        let mesh = resources.mesh("sky:stars".to_owned(), &|| shape_mesh(Shape::Cube, &stars));
+        let texture = resources.texture("sky:stars".to_owned(), &|| mi_assets::decode_square(STARS_PNG));
+        let matrix = unit.then(&Mat4::scaling([distance * 0.8; 3])).then(&sky_matrix);
+        objects.push(backdrop(mesh, matrix, texture, [1.0, 1.0, 1.0, 0.4 * night], Layer::Sky));
+    }
+
+    // Sun and moon: squares facing the camera from opposite ends of the sky.
+    let disc = resources.mesh("sky:disc".to_owned(), &|| shape_mesh(Shape::Surface, &ShapeSettings::default()));
+    let size = distance / 15000.0 * 1850.0;
+    let reach = distance * 0.7;
+
+    let visible = look.sky.sun_visibility();
+    if visible > 0.0 {
+        let scale = background.sky_sun_scale;
+        let z = reach.min((reach / scale).max(0.0));
+        let width = size * scale.min(1.0);
+        let place = Mat4::build([0.0, 0.0, z], [90.0, 0.0, background.sky_sun_angle], [width, width, size]);
+        let texture = pack_texture(resources, look.pack, "environment/sun");
+        objects.push(backdrop(disc, unit.then(&place).then(&sky_matrix), texture, [1.0, 1.0, 1.0, visible], Layer::SkyAdd));
+    }
+
+    let visible = look.sky.moon_visibility();
+    if visible > 0.0 {
+        let scale = background.sky_moon_scale;
+        let z = (-reach).max((-reach / scale).min(0.0));
+        let width = size * scale.min(1.0);
+        let place = Mat4::build([0.0, 0.0, z], [-90.0, 0.0, -background.sky_moon_angle], [width, width, size]);
+        let phase = background.sky_moon_phase.clamp(0.0, 7.0) as u32;
+        let texture = look.pack.and_then(|pack| {
+            resources.texture(format!("sky:moon:{phase}"), &|| {
+                mi_assets::moon_phase(&pack.texture("environment/moon_phases")?, phase)
+            })
+        });
+        objects.push(backdrop(disc, unit.then(&place).then(&sky_matrix), texture, [1.0, 1.0, 1.0, visible], Layer::SkyAdd));
+    }
+}
+
+/// The cloud layer (`render_world_sky_clouds`): tiles of one mesh around
+/// the camera, drifting with the animation's time. `seconds` is how far
+/// into the animation the frame is.
+fn push_clouds(objects: &mut Vec<RenderObject>, resources: &mut dyn SceneResources, look: &SkyLook, seconds: f64) {
+    let background = look.background;
+    let Some(pack) = look.pack else { return };
+    if !background.sky_clouds_show {
+        return;
+    }
+    let mode = mi_assets::CloudMode::from_name(&background.sky_clouds_mode);
+    let size = (background.sky_clouds_size * 32.0) as f32;
+    let thickness = background.sky_clouds_thickness as f32;
+    let mesh = resources.mesh(format!("sky:clouds:{mode:?}:{size}:{thickness}"), &|| {
+        pack.texture("environment/clouds")
+            .map(|texture| mi_assets::clouds_mesh(&texture, size, thickness, mode))
+            .unwrap_or_default()
+    });
+    let texture = pack_texture(resources, Some(pack), "environment/clouds");
+
+    let night = look.sky.night_alpha();
+    let faded = mode == mi_assets::CloudMode::Faded;
+    // Faded clouds disappear as the camera rises to them.
+    let near = if faded { ((background.sky_clouds_height as f32 - look.camera.from.z) / 250.0).clamp(0.0, 1.0) } else { 1.0 };
+    let alpha = if faded { 1.0 - night.min(0.95) } else { 0.8 - night.min(0.75) } * near;
+    let day = rgb(background.sky_clouds_color);
+    let moonlit = [120.0 / 255.0, 120.0 / 255.0, 1.0];
+    let color = [0, 1, 2].map(|i| day[i] + (moonlit[i] - day[i]) * night);
+
+    // `background_time` counts sixtieths of a second.
+    let drift = background.sky_clouds_speed * (seconds * 60.0 * 0.25 + background.sky_time * 100.0) + background.sky_clouds_offset;
+    let camera = [look.camera.from.x, look.camera.from.y];
+    for [x, y] in mi_assets::cloud_positions(camera, size, background.fog_distance as f32, drift as f32) {
+        let model = glam::Mat4::from_translation(glam::Vec3::new(x, y, background.sky_clouds_height as f32));
+        let mut object = RenderObject::new(mesh, model.to_cols_array());
+        object.texture = texture;
+        object.blend_color = [color[0], color[1], color[2], alpha];
+        object.unlit = true;
+        object.fog = background.fog_show && background.fog_sky;
+        object.backfaces = true;
+        objects.push(object);
     }
 }
 
@@ -206,6 +346,16 @@ pub fn build_scene(
     let mut lights = Vec::new();
     let unlit = mode == ViewMode::Flat;
 
+    // Sky
+    let sky = sky_settings(background, render.distance);
+    let lighting = sky.lighting();
+    let camera_angle = mi_render::environment::camera_sky_angle(camera.from, camera.to, sky.sky_rotation);
+    let fog_color = if background.fog_color_custom { rgb(background.fog_color) } else { sky.fog_color(camera_angle) };
+    let sky_look = SkyLook { background, sky, camera: &camera, fog_color, pack: inputs.pack };
+    if inputs.backdrop {
+        push_sky(&mut objects, resources, &sky_look);
+    }
+
     // Ground
     if background.ground_show {
         let mesh = resources.mesh(format!("ground:{far}"), &|| ground_mesh(far));
@@ -224,6 +374,9 @@ pub fn build_scene(
         ground.sun_only = true;
         ground.unlit = unlit;
         objects.push(ground);
+    }
+    if inputs.backdrop {
+        push_clouds(&mut objects, resources, &sky_look, marker / file.info.tempo.max(1.0));
     }
 
     for node_index in draw_order {
@@ -472,13 +625,16 @@ pub fn build_scene(
         }
     }
 
-    let lighting = sky_settings(background, render.distance).lighting();
-    let fog_color = if background.fog_color_custom { rgb(background.fog_color) } else { lighting.sky_color };
+    // The sunrise or sunset lights up the whole backdrop.
+    let glow = sky.twilight_glow(camera_angle, fog_color);
+    let backdrop_color = [0, 1, 2].map(|i| (lighting.sky_color[i] + glow[i]).min(1.0));
+    let object_fog = if background.fog_object_color_custom { rgb(background.fog_object_color) } else { fog_color };
     RenderScene {
         camera,
+        background: backdrop_color,
         fog: Fog {
             show: background.fog_show,
-            color: fog_color,
+            color: object_fog,
             distance: background.fog_distance as f32,
             size: background.fog_size as f32,
             height: background.fog_height as f32,
@@ -701,6 +857,52 @@ mod tests {
     }
 
     #[test]
+    fn the_sky_is_a_backdrop_and_clouds_are_in_the_world() {
+        let pack = pack();
+        let sky_of = |time: f64, edit: &dyn Fn(&mut Background)| {
+            let mut file = ProjectFile::new(1.0, 1.0);
+            file.background.sky_time = time;
+            edit(&mut file.background);
+            let project = Project::from_file(file, IdGenerator::new(1)).0;
+            let inputs = SceneInputs { pack: Some(&pack), backdrop: true, ..Default::default() };
+            build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded)
+        };
+        let layers = |scene: &RenderScene| scene.objects.iter().map(|o| o.layer).collect::<Vec<_>>();
+
+        // By day: the haze and the sun behind everything, then the ground,
+        // then the cloud tiles.
+        let (day, recorder) = sky_of(-45.0, &|_| {});
+        assert_eq!(recorder.keys[..2], ["sky:dome", "sky:disc"]);
+        assert_eq!(layers(&day)[..3], [Layer::Sky, Layer::SkyAdd, Layer::World]);
+        assert!(recorder.textures.contains(&"pack:environment/sun".to_owned()));
+        let clouds: Vec<&RenderObject> = day.objects.iter().filter(|o| o.layer == Layer::World && o.unlit).collect();
+        assert_eq!(clouds.len(), 16);
+        assert!(clouds.iter().all(|c| c.model[14] == 1024.0 && (c.blend_color[3] - 0.8).abs() < 1e-6 && c.fog));
+        // The backdrop is unlit and unfogged, and nothing of it can be picked.
+        assert!(day.objects.iter().filter(|o| o.layer != Layer::World).all(|o| o.unlit && !o.fog && o.pick == 0));
+        // By day the fog is the sky colour going on white, not the sky colour.
+        assert!(day.fog.color[0] > day.lighting.sky_color[0] + 0.2);
+        assert_eq!(day.background, day.lighting.sky_color);
+
+        // At night: haze, stars and the moon in its phase; fainter, bluer clouds.
+        let (night, recorder) = sky_of(180.0, &|b| b.sky_moon_phase = 3.0);
+        assert_eq!(recorder.keys[..3], ["sky:dome", "sky:stars", "sky:disc"]);
+        assert_eq!(layers(&night)[..3], [Layer::Sky, Layer::Sky, Layer::SkyAdd]);
+        assert!(recorder.textures.contains(&"sky:moon:3".to_owned()));
+        assert!((night.objects[1].blend_color[3] - 0.4).abs() < 1e-6);
+        let cloud = night.objects.iter().find(|o| o.layer == Layer::World && o.unlit).unwrap();
+        assert!((cloud.blend_color[3] - 0.05).abs() < 1e-6 && cloud.blend_color[2] > cloud.blend_color[0]);
+
+        // Without fog on the sky there is no haze, and clouds can be off.
+        let (bare, recorder) = sky_of(-45.0, &|b| {
+            b.fog_sky = false;
+            b.sky_clouds_show = false;
+        });
+        assert_eq!(recorder.keys[0], "sky:disc");
+        assert!(!bare.objects.iter().any(|o| o.layer == Layer::World && o.unlit));
+    }
+
+    #[test]
     fn characters_are_drawn_from_the_asset_pack() {
         let pack = pack();
         let mut file = ProjectFile::new(1.0, 1.0);
@@ -730,7 +932,7 @@ mod tests {
         let bindings = ModelBindings::bind(&project, &pack);
         assert_eq!(bindings.len(), 3);
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[], font: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[], font: None, backdrop: false };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         // Ground plus the shapes of three parts, all textured.
         assert!(scene.objects.len() > 4, "{}", scene.objects.len());
@@ -760,7 +962,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[], font: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[], font: None, backdrop: false };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys.len(), 1);
         assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
@@ -808,7 +1010,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[], font: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[], font: None, backdrop: false };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys, ["scenery:RES:true:false:true"]);
         // One texture, two copies along Y.

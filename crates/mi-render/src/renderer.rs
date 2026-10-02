@@ -5,7 +5,7 @@
 //! target must use a non-sRGB format such as `Rgba8Unorm` or `Bgra8Unorm`.
 
 use mi_mesh::{MeshData, Vertex};
-use crate::scene::{MeshId, RenderObject, RenderScene, TextureId, Tonemapper};
+use crate::scene::{Layer, MeshId, RenderObject, RenderScene, TextureId, Tonemapper};
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
@@ -101,6 +101,10 @@ impl ObjectUniform {
 #[derive(Clone, Copy)]
 enum Pass {
     World,
+    /// The backdrop: no depth, blended over what is there.
+    Sky,
+    /// The backdrop, added to what is there.
+    SkyAdd,
     Pick,
     Mask,
 }
@@ -125,6 +129,8 @@ pub struct Renderer {
     target_format: wgpu::TextureFormat,
     pipeline_cull: wgpu::RenderPipeline,
     pipeline_two_sided: wgpu::RenderPipeline,
+    pipeline_sky: wgpu::RenderPipeline,
+    pipeline_sky_add: wgpu::RenderPipeline,
     pick_cull: wgpu::RenderPipeline,
     pick_two_sided: wgpu::RenderPipeline,
     mask_cull: wgpu::RenderPipeline,
@@ -280,8 +286,18 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pick.wgsl").into()),
         });
         let pipeline = |cull_mode: Option<wgpu::Face>, label: &str, pass: Pass| {
+            let backdrop = matches!(pass, Pass::Sky | Pass::SkyAdd);
             let (shader, entry, format, blend) = match pass {
-                Pass::World => (&shader, "fs_main", target_format, Some(wgpu::BlendState::ALPHA_BLENDING)),
+                Pass::World | Pass::Sky => (&shader, "fs_main", target_format, Some(wgpu::BlendState::ALPHA_BLENDING)),
+                // GameMaker's `bm_add`: source times its alpha, plus what is there.
+                Pass::SkyAdd => {
+                    let add = wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    };
+                    (&shader, "fs_main", target_format, Some(wgpu::BlendState { color: add, alpha: add }))
+                }
                 Pass::Pick => (&pick_shader, "fs_main", PICK_FORMAT, None),
                 Pass::Mask => (&pick_shader, "fs_mask", MASK_FORMAT, None),
             };
@@ -307,8 +323,8 @@ impl Renderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: !backdrop,
+                    depth_compare: if backdrop { wgpu::CompareFunction::Always } else { wgpu::CompareFunction::LessEqual },
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -325,6 +341,8 @@ impl Renderer {
         };
         let pipeline_cull = pipeline(Some(wgpu::Face::Back), "world, culled", Pass::World);
         let pipeline_two_sided = pipeline(None, "world, two-sided", Pass::World);
+        let pipeline_sky = pipeline(None, "sky", Pass::Sky);
+        let pipeline_sky_add = pipeline(None, "sky, additive", Pass::SkyAdd);
         let pick_cull = pipeline(Some(wgpu::Face::Back), "pick, culled", Pass::Pick);
         let pick_two_sided = pipeline(None, "pick, two-sided", Pass::Pick);
         let mask_cull = pipeline(Some(wgpu::Face::Back), "mask, culled", Pass::Mask);
@@ -442,6 +460,8 @@ impl Renderer {
             target_format,
             pipeline_cull,
             pipeline_two_sided,
+            pipeline_sky,
+            pipeline_sky_add,
             pick_cull,
             pick_two_sided,
             mask_cull,
@@ -700,7 +720,7 @@ impl Renderer {
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("world") });
         {
-            let sky = scene.lighting.sky_color;
+            let sky = scene.background;
             let (color_load, depth_load) = if clear {
                 let color = wgpu::Color { r: sky[0] as f64, g: sky[1] as f64, b: sky[2] as f64, a: 1.0 };
                 (wgpu::LoadOp::Clear(color), wgpu::LoadOp::Clear(1.0))
@@ -729,7 +749,12 @@ impl Renderer {
 
             for (i, object) in drawable.iter().enumerate() {
                 let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
-                let pipeline = if object.backfaces { &self.pipeline_two_sided } else { &self.pipeline_cull };
+                let pipeline = match object.layer {
+                    Layer::Sky => &self.pipeline_sky,
+                    Layer::SkyAdd => &self.pipeline_sky_add,
+                    Layer::World if object.backfaces => &self.pipeline_two_sided,
+                    Layer::World => &self.pipeline_cull,
+                };
                 let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(1, &self.object_bind, &[(i as u64 * self.object_stride) as u32]);

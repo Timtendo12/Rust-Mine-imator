@@ -40,6 +40,7 @@ fn scene(objects: Vec<RenderObject>) -> RenderScene {
             far: 1000.0,
         },
         lighting: SkySettings { sky_time: 0.0, ..Default::default() }.lighting(),
+        background: SkySettings::default().sky_color,
         fog: Fog { show: false, color: [1.0; 3], distance: 1000.0, size: 100.0, height: 1000.0 },
         tonemapper: Tonemapper::None,
         exposure: 1.0,
@@ -296,4 +297,33 @@ fn selected_objects_get_a_white_border() {
     let first_other = row.iter().position(|p| *p != [255, 0, 0, 255]).unwrap();
     assert_eq!(row[first_other], white);
     assert_eq!(*row.last().unwrap(), SKY);
+}
+
+#[test]
+fn sky_layers_stay_behind_the_world_and_can_add_light() {
+    use mi_render::Layer;
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+    let near = |a: [u8; 4], b: [i32; 3]| (0..3).all(|i| (a[i] as i32 - b[i]).abs() <= 1);
+
+    // A backdrop object nearer to the camera does not hide a world
+    // object behind it, even when it is drawn first: it has no depth.
+    let mut backdrop = flat(cube, translation(0.0, -20.0, 0.0), [0.0, 1.0, 0.0, 1.0]);
+    backdrop.layer = Layer::Sky;
+    let world = flat(cube, translation(0.0, 20.0, 0.0), [1.0, 0.0, 0.0, 1.0]);
+    let mut s = scene(vec![backdrop.clone(), world]);
+    s.background = [0.0, 0.0, 0.25];
+    let image = render(&gpu, &mut renderer, &s);
+    assert!(near(centre(&image), [255, 0, 0]), "{:?}", centre(&image));
+    // Around the world object the backdrop shows; in the corner the clear colour.
+    assert!(near(pixel(&image, SIZE / 2 + 30, SIZE / 2), [0, 255, 0]));
+    assert!(near(pixel(&image, 1, 1), [0, 0, 64]));
+
+    // An additive object adds its colour times its alpha; of the cube both
+    // the front and the back are drawn, as backdrops are not culled.
+    let mut glow = flat(cube, translation(0.0, 0.0, 0.0), [1.0, 0.5, 0.0, 0.25]);
+    glow.layer = Layer::SkyAdd;
+    s.objects = vec![glow];
+    let image = render(&gpu, &mut renderer, &s);
+    assert!(near(centre(&image), [128, 64, 64]), "{:?}", centre(&image));
 }

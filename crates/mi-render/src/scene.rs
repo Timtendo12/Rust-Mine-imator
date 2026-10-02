@@ -42,6 +42,18 @@ pub struct ColorTransform {
     pub mix_percent: f32,
 }
 
+/// Which part of the frame an object belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Layer {
+    /// Solid things, hidden by what is in front of them.
+    #[default]
+    World,
+    /// The backdrop: drawn in order behind everything, without depth.
+    Sky,
+    /// Like `Sky`, but added to what is there (sun and moon).
+    SkyAdd,
+}
+
 /// One draw: a mesh with its transform and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderObject {
@@ -70,6 +82,7 @@ pub struct RenderObject {
     pub pick_only: bool,
     /// Part of the selection, which gets an outline.
     pub selected: bool,
+    pub layer: Layer,
 }
 
 impl RenderObject {
@@ -91,6 +104,7 @@ impl RenderObject {
             pick: 0,
             pick_only: false,
             selected: false,
+            layer: Layer::World,
         }
     }
 }
@@ -127,6 +141,8 @@ pub enum Tonemapper {
 pub struct RenderScene {
     pub camera: Camera,
     pub lighting: Lighting,
+    /// Colour the frame is cleared with.
+    pub background: Rgb,
     pub fog: Fog,
     pub tonemapper: Tonemapper,
     pub exposure: f32,

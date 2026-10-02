@@ -261,6 +261,7 @@ impl RenderThread {
                     scenery: scenery.as_ref(),
                     selected: &selected,
                     font: state.font(),
+                    backdrop: true,
                 };
             let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
             build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
