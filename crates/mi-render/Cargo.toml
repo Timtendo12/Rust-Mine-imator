@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.30"
+mi-mesh = { workspace = true }
 thiserror = { workspace = true }
 wgpu = "26"
 

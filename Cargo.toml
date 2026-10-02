@@ -11,7 +11,9 @@ repository = "https://github.com/Timtendo12/Rust-Mine-imator"
 [workspace.dependencies]
 mi-core = { path = "crates/mi-core" }
 mi-anim = { path = "crates/mi-anim" }
+mi-assets = { path = "crates/mi-assets" }
 mi-format = { path = "crates/mi-format" }
+mi-mesh = { path = "crates/mi-mesh" }
 mi-project = { path = "crates/mi-project" }
 mi-render = { path = "crates/mi-render" }
 serde = { version = "1", features = ["derive"] }

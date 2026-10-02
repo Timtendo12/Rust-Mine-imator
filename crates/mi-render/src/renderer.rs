@@ -4,7 +4,7 @@
 //! are not sRGB formats and the shader applies gamma itself, so a render
 //! target must use a non-sRGB format such as `Rgba8Unorm` or `Bgra8Unorm`.
 
-use crate::mesh::{MeshData, Vertex};
+use mi_mesh::{MeshData, Vertex};
 use crate::scene::{MeshId, RenderObject, RenderScene, TextureId, Tonemapper};
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;

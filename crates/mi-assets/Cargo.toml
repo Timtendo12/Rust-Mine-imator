@@ -1,0 +1,15 @@
+[package]
+name = "mi-assets"
+description = "Minecraft assets for Mine-imator: asset pack, models, textures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+mi-anim = { workspace = true }
+mi-core = { workspace = true }
+mi-format = { workspace = true }
+mi-mesh = { workspace = true }
+thiserror = { workspace = true }
+zip = { version = "2", default-features = false, features = ["deflate"] }

@@ -1,65 +1,8 @@
-//! Mesh data and the generators for the built-in shapes
-//! (`vbuffer_add_triangle`, `vbuffer_create_*`, `background_ground_startup`).
-//!
-//! Meshes are plain triangle lists, like the vertex buffers of the original.
-//! The cross product of a triangle's edges (first to second, first to third
-//! corner) points along its normal. Because the world is left-handed, that
-//! makes front faces clockwise on screen.
+//! Generators for the built-in shapes (`vbuffer_create_*`,
+//! `background_ground_startup`).
 
-use bytemuck::{Pod, Zeroable};
+use crate::MeshData;
 use std::f32::consts::PI;
-
-/// One vertex, matching the original vertex format (`vertex_format_startup`)
-/// except for the tangent, which is not generated yet.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub uv: [f32; 2],
-    pub color: [f32; 4],
-    /// Wind sway on XY, wind sway on Z, emissive, subsurface (`in_Wave`).
-    pub custom: [f32; 4],
-}
-
-/// A triangle list.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct MeshData {
-    pub vertices: Vec<Vertex>,
-}
-
-impl MeshData {
-    pub fn triangle_count(&self) -> usize {
-        self.vertices.len() / 3
-    }
-
-    /// `vertex_add` with an explicit normal.
-    fn vertex(&mut self, position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) {
-        let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-        let normal = if length > 0.0 { normal.map(|n| n / length) } else { normal };
-        self.vertices.push(Vertex { position, normal, uv, color: [1.0; 4], custom: [0.0; 4] });
-    }
-
-    /// `vbuffer_add_triangle` in its coordinate form: a flat triangle whose
-    /// normal follows from its corners. `invert` flips it.
-    fn triangle(&mut self, p: [[f32; 3]; 3], uv: [[f32; 2]; 3], invert: bool) {
-        let [p1, p2, p3] = p;
-        let mut normal = [
-            (p1[2] - p2[2]) * (p3[1] - p2[1]) - (p1[1] - p2[1]) * (p3[2] - p2[2]),
-            (p1[0] - p2[0]) * (p3[2] - p2[2]) - (p1[2] - p2[2]) * (p3[0] - p2[0]),
-            (p1[1] - p2[1]) * (p3[0] - p2[0]) - (p1[0] - p2[0]) * (p3[1] - p2[1]),
-        ];
-        if invert {
-            normal = normal.map(|n| -n);
-            self.vertex(p2, normal, uv[1]);
-            self.vertex(p1, normal, uv[0]);
-        } else {
-            self.vertex(p1, normal, uv[0]);
-            self.vertex(p2, normal, uv[1]);
-        }
-        self.vertex(p3, normal, uv[2]);
-    }
-}
 
 /// Settings of a shape template that affect its mesh (`temp_update_shape`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -396,6 +339,7 @@ pub fn ground_mesh(render_distance: f32) -> MeshData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MeshData;
 
     fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
         [a[0] - b[0], a[1] - b[1], a[2] - b[2]]

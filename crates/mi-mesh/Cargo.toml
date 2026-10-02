@@ -1,0 +1,9 @@
+[package]
+name = "mi-mesh"
+description = "Mesh data and generators for the built-in Mine-imator shapes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }

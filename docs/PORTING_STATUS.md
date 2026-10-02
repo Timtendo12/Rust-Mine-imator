@@ -40,7 +40,7 @@ Legend: **done** · **partial** · **not started**
 | `settings.midata` (and legacy settings) | not started | |
 | `recent.midata` | done | Read, written and seeded from an installation of the original. Writing `thumbnail.png` is not done. |
 | `.milanguage` | done | English loads; switching languages (`languages.midata`, legacy format) not yet |
-| `.mimodel` | not started | |
+| `.mimodel` | done | All bundled models parse; block and plane shape meshes incl. bending (blocky and realistic). 3D planes are generated flat. Not yet used by the viewport. |
 | Minecraft version manifest (`<version>.midata`) | not started | |
 | `legacy.midata` | not started | |
 | NBT, `.schematic`, `.nbt` structures, `.blocks` | not started | |
