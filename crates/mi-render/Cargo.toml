@@ -1,0 +1,15 @@
+[package]
+name = "mi-render"
+description = "wgpu renderer for Mine-imator scenes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+glam = "0.30"
+thiserror = { workspace = true }
+wgpu = "26"
+
+[dev-dependencies]
+pollster = "0.4"

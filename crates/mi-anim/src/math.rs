@@ -3,9 +3,11 @@
 //! The world is Z-up. Matrices follow GameMaker: sixteen numbers with the
 //! translation in elements 12..14, applied to row vectors, so
 //! `a.then(&b)` (`matrix_multiply(a, b)`) transforms by `a` first and `b`
-//! second. Angles are in degrees and, as in GameMaker, positive angles turn
-//! clockwise when looking down the axis from its positive end (+X towards
-//! -Y for a Z rotation). The formulas are ported from
+//! second. Angles are in degrees; a positive Z rotation turns +X towards
+//! -Y, a positive X rotation +Y towards -Z and a positive Y rotation +Z
+//! towards -X. The world is left-handed (see `mi-render`'s camera), so on
+//! screen these are the usual counter-clockwise rotations. The formulas are
+//! ported from
 //! `CppProject/Render/Matrix.cpp` and the `matrix_*` / `vec3_*` scripts, so
 //! results match the original to floating point precision.
 

@@ -13,6 +13,7 @@ mi-core = { path = "crates/mi-core" }
 mi-anim = { path = "crates/mi-anim" }
 mi-format = { path = "crates/mi-format" }
 mi-project = { path = "crates/mi-project" }
+mi-render = { path = "crates/mi-render" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"

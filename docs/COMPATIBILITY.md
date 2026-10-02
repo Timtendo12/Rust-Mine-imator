@@ -35,6 +35,7 @@ Fixes change behaviour in memory, not the layout on disk, so files stay readable
 | A timeline whose `glint_tex` is `"null"` crashes on load. | Falls back to the built-in texture. |
 | The inverse kinematics solver tests convergence against the wrong joint and so always runs all 30 rounds. | Stops when the end of the limb is on the target. Results are the same. |
 | Models that copy the pose of their parent model stop following paths. | Path following is kept in the pose pass. |
+| The tip of an inverted cone keeps an upward normal, so the inside of the cone is lit wrongly near the tip. | The normal is flipped with the rest. |
 
 ## Quirks of the original kept on purpose
 
@@ -44,7 +45,7 @@ Changing these would alter how existing projects look.
 |---|---|
 | Path lengths are measured about 5% short (a loop meant to sample 0..1 stops at 0.95). | `PATH_OFFSET` keyframes are expressed in these units; correcting the length would move every object that follows a path. |
 | `matrix_build` rotates before it scales. | The timeline transform compensates for it ("resize" scaling); results are the same as in the original. |
-| Positive rotation angles turn clockwise seen from the positive end of the axis. | All saved rotations depend on it. |
+| The world is left-handed (Z up; +X is to the left when looking along +Y), and a positive Z rotation turns +X towards -Y. | All saved positions and rotations depend on it. It is what makes Minecraft worlds, whose Y and Z are swapped on import, appear unmirrored. |
 
 ## Not yet supported
 
