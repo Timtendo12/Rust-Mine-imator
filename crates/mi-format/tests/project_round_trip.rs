@@ -336,7 +336,9 @@ fn project_from_1_2_x_is_upgraded() {
     assert_eq!(kf[ValueId::CamShakeSpeedX], Value::Number(20.0));
     assert_eq!(kf[ValueId::CamShakeMode], Value::Number(1.0));
     assert_eq!(kf[ValueId::Emissive], Value::Number(0.5));
-    assert_eq!(cam.alpha_mode, 0.0);
+    // Cameras have no appearance settings, so the forced blend mode of old
+    // projects does not apply to them.
+    assert_eq!(cam.alpha_mode, 2.0);
 
     let bg = &p.objects.timelines[1].keyframes[0].values;
     assert_eq!(bg[ValueId::BgSunlightStrength], Value::Number(1.5));

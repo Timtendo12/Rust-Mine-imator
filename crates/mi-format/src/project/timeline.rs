@@ -458,7 +458,12 @@ impl Timeline {
             tl.blend_mode = v.to_owned();
         }
         if format < fmt::FORMAT_200_PRE_5 {
-            tl.alpha_mode = mi_core::AlphaMode::Blend.index() as f64;
+            // Older projects always blended. Timelines without appearance
+            // settings (cameras, audio, ...) never store the mode, so they
+            // keep the default and a saved project reloads unchanged.
+            if kind.value_types(false).has(ValueType::Appearance) {
+                tl.alpha_mode = mi_core::AlphaMode::Blend.index() as f64;
+            }
         } else {
             real("alpha_mode", &mut tl.alpha_mode);
         }
