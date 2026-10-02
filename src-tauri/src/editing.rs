@@ -243,7 +243,7 @@ pub fn workbench_items(state: State<'_, AppState>) -> WorkbenchItems {
     let blocks = pack.blocks();
     items.blocks = blocks.names().map(|n| WorkbenchItem { name: n.to_owned(), label: language.asset_name("block", n) }).collect();
     for list in [&mut items.characters, &mut items.special_blocks, &mut items.blocks] {
-        list.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+        list.sort_by_key(|item| item.label.to_lowercase());
     }
     items
 }
