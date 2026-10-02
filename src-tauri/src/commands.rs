@@ -15,6 +15,8 @@ pub enum CommandError {
     Project(#[from] ProjectError),
     #[error("No project is open.")]
     NoProject,
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl Serialize for CommandError {
@@ -52,6 +54,12 @@ pub struct TimelineSummary {
     kind: &'static str,
     /// Number of ancestors.
     depth: usize,
+    /// Parent in the tree; absent at the root.
+    parent: Option<String>,
+    /// Position among the parent's children.
+    index: usize,
+    /// Part of a model or scenery, which cannot be moved or removed on its own.
+    part: bool,
     /// Frames that have a keyframe.
     keyframes: Vec<i64>,
     hidden: bool,
@@ -160,6 +168,9 @@ pub(crate) fn summarize(project: &Project, language: &mi_format::language::Langu
                     name: project.timeline_display_name(tl, language),
                     kind: tl.kind.name(),
                     depth: project.tree().depth(i),
+                    parent: project.tree().parent(i).map(|p| timelines[p].id.to_string()),
+                    index: project.tree().index_in_parent(i),
+                    part: !tl.part_of.is_null(),
                     keyframes: tl.keyframes.iter().map(|k| k.position).collect(),
                     hidden: tl.hide,
                 }

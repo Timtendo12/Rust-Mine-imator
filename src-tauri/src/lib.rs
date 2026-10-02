@@ -92,7 +92,11 @@ pub fn run() {
             editing::set_timelines_hidden,
             editing::undo,
             editing::redo,
-            editing::save_project
+            editing::save_project,
+            editing::create_timeline,
+            editing::remove_timelines,
+            editing::duplicate_timelines,
+            editing::reparent_timelines
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");

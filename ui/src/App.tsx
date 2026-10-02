@@ -4,19 +4,24 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
   appInfo,
   closeProject,
+  createTimeline,
+  duplicateTimelines,
   evaluateFrame,
   finishEdit,
   moveKeyframes,
   openProject,
   redo,
   removeKeyframes,
+  removeTimelines,
   renameTimeline,
+  reparentTimelines,
   saveProject,
   setTimelinesHidden,
   setTimelineValues,
   startupProject,
   undo,
   type AppInfo,
+  type CreatableKind,
   type Edited,
   type FrameState,
   type KeyframeKey,
@@ -166,6 +171,40 @@ export function App() {
     void run(() => removeKeyframes(keys));
   }, [run, selectedKeyframes]);
 
+  /** Delete: the selected keyframes if there are any, else the selected timeline. */
+  const deleteSelection = useCallback(() => {
+    if (selectedKeyframes.length > 0) {
+      deleteSelectedKeyframes();
+    } else if (selected) {
+      const id = selected;
+      setSelected(null);
+      void run(() => removeTimelines([id]));
+    }
+  }, [deleteSelectedKeyframes, run, selected, selectedKeyframes]);
+
+  const create = useCallback(
+    async (kind: CreatableKind) => {
+      const result = await run(() => createTimeline(kind));
+      const created = (result as (Edited & { created: string[] }) | null)?.created ?? [];
+      if (created.length > 0) {
+        setSelected(created[0]);
+        setSelectedKeyframes([]);
+      }
+    },
+    [run],
+  );
+
+  const duplicate = useCallback(async () => {
+    if (!selected) return;
+    const id = selected;
+    const result = await run(() => duplicateTimelines([id]));
+    const created = (result as (Edited & { created: string[] }) | null)?.created ?? [];
+    if (created.length > 0) {
+      setSelected(created[0]);
+      setSelectedKeyframes([]);
+    }
+  }, [run, selected]);
+
   const doUndo = useCallback(() => {
     setSelectedKeyframes([]);
     void run(undo);
@@ -231,8 +270,11 @@ export function App() {
       } else if (ctrl && (key === "y" || (key === "z" && event.shiftKey))) {
         event.preventDefault();
         doRedo();
+      } else if (ctrl && key === "d") {
+        event.preventDefault();
+        void duplicate();
       } else if (event.key === "Delete") {
-        deleteSelectedKeyframes();
+        deleteSelection();
       } else if (event.key === " ") {
         event.preventDefault();
         setPlaying((p) => !p);
@@ -240,7 +282,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelectedKeyframes]);
+  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate]);
 
   if (!project) {
     return (
@@ -274,10 +316,10 @@ export function App() {
         { label: project.undo ? `Undo ${project.undo.toLowerCase()}` : "Undo", action: project.undo ? doUndo : undefined, shortcut: "Ctrl+Z" },
         { label: project.redo ? `Redo ${project.redo.toLowerCase()}` : "Redo", action: project.redo ? doRedo : undefined, shortcut: "Ctrl+Y" },
         { label: "Select all" },
-        { label: "Duplicate" },
+        { label: "Duplicate timeline", action: selected ? () => void duplicate() : undefined, shortcut: "Ctrl+D" },
         {
-          label: "Delete keyframes",
-          action: selectedKeyframes.length > 0 ? deleteSelectedKeyframes : undefined,
+          label: selectedKeyframes.length > 0 ? "Delete keyframes" : "Delete timeline",
+          action: selectedKeyframes.length > 0 || selected ? deleteSelection : undefined,
           shortcut: "Delete",
         },
       ],
@@ -318,6 +360,8 @@ export function App() {
             onMoveDone={() => void finishEdit()}
             onRename={(id, name) => void run(() => renameTimeline(id, name))}
             onToggleHidden={(id, hidden) => void run(() => setTimelinesHidden([id], hidden))}
+            onCreate={(kind) => void create(kind)}
+            onReparent={(id, parent, index) => void run(() => reparentTimelines([id], parent, index))}
             onPlay={setPlaying}
           />
         </div>

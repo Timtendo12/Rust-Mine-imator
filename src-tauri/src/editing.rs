@@ -157,3 +157,54 @@ pub fn save_project(path: Option<String>, state: State<'_, AppState>) -> Result<
     saved?;
     Ok(edited)
 }
+
+#[derive(Debug, Serialize)]
+pub struct Created {
+    #[serde(flatten)]
+    edited: Edited,
+    /// The new timelines, to select them.
+    created: Vec<String>,
+}
+
+/// Adds a folder, camera, light or shape at the end of the timeline list.
+/// Cameras start where the work camera is.
+#[tauri::command]
+pub fn create_timeline(kind: String, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let kind = mi_core::TlType::from_name(&kind).ok_or_else(|| CommandError::Invalid(format!("unknown timeline type {kind}")))?;
+    let work = state.view().work_camera;
+    let position = work.position();
+    let pose = mi_project::CameraPose {
+        position: [position.x as f64, position.y as f64, position.z as f64],
+        look_xy: work.look_xy as f64,
+        look_z: work.look_z as f64,
+        roll: work.roll as f64,
+    };
+    let (id, edited) = change(&state, |p| p.create_timeline(kind, Some(pose)))?;
+    Ok(Created { edited, created: id.into_iter().map(|i| i.to_string()).collect() })
+}
+
+/// Removes timelines and everything below them.
+#[tauri::command]
+pub fn remove_timelines(timelines: Vec<String>, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    Ok(change(&state, |p| p.remove_timelines(&ids(&timelines)))?.1)
+}
+
+/// Copies timelines with everything below them.
+#[tauri::command]
+pub fn duplicate_timelines(timelines: Vec<String>, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let (copies, edited) = change(&state, |p| p.duplicate_timelines(&ids(&timelines)))?;
+    Ok(Created { edited, created: copies.iter().map(|i| i.to_string()).collect() })
+}
+
+/// Moves timelines under `parent` (the root when absent), at `index` among
+/// its children or at the end.
+#[tauri::command]
+pub fn reparent_timelines(
+    timelines: Vec<String>,
+    parent: Option<String>,
+    index: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Edited, CommandError> {
+    let parent = parent.map(SaveId::new);
+    Ok(change(&state, |p| p.reparent_timelines(&ids(&timelines), parent.as_ref(), index))?.1)
+}

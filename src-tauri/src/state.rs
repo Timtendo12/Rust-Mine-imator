@@ -120,11 +120,15 @@ impl AppState {
         *lock(&self.scenery) = scenery;
     }
 
-    /// Binds models and reads scenery again for the open project, after
-    /// timelines were added, removed or reordered.
+    /// Binds models again after timelines were added, removed or
+    /// reordered: bindings are by timeline position. Scenery is by
+    /// resource and stays.
     pub fn refresh_project_assets(&self) {
-        let project = lock(&self.project).take();
-        self.set_project(project);
+        let bindings = match (lock(&self.project).as_ref(), self.pack()) {
+            (Some(project), Some(pack)) => Some(ModelBindings::bind(project, pack)),
+            _ => None,
+        };
+        *lock(&self.bindings) = bindings;
     }
 
     /// Registers the viewport once it has been created.

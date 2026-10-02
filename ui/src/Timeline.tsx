@@ -1,11 +1,45 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
-import type { FrameState, KeyframeKey, ProjectSummary } from "./backend";
+import type { CreatableKind, FrameState, KeyframeKey, ProjectSummary, TimelineSummary } from "./backend";
 
 const ROW_HEIGHT = 24;
 const RULER_HEIGHT = 26;
 const MIN_FRAMES = 120;
 /** Space before frame 0 so that keyframes there are not cut off. */
 const PADDING = 10;
+
+/** What the create menu offers, in the workbench's order. */
+const CREATABLE: [CreatableKind, string][] = [
+  ["folder", "Folder"],
+  ["camera", "Camera"],
+  ["pointlight", "Point light"],
+  ["spotlight", "Spot light"],
+  ["cube", "Cube"],
+  ["cone", "Cone"],
+  ["cylinder", "Cylinder"],
+  ["sphere", "Sphere"],
+  ["surface", "Surface"],
+];
+
+/** Where a dragged timeline would land relative to the row under the pointer. */
+type DropZone = "before" | "into" | "after";
+
+interface RowDrag {
+  pointer: number;
+  id: string;
+  startY: number;
+  dragging: boolean;
+  target: { id: string | null; zone: DropZone } | null;
+}
+
+/** Whether `id` is `ancestor` or below it. */
+function isWithin(timelines: TimelineSummary[], id: string, ancestor: string): boolean {
+  let current: string | null = id;
+  while (current) {
+    if (current === ancestor) return true;
+    current = timelines.find((t) => t.id === current)?.parent ?? null;
+  }
+  return false;
+}
 
 /** Identifies a keyframe in sets. */
 export const keyframeId = (key: KeyframeKey) => `${key.timeline}:${key.position}`;
@@ -25,6 +59,9 @@ interface Props {
   onMoveKeyframes: (keys: KeyframeKey[], offset: number) => void;
   onMoveDone: () => void;
   onRename: (id: string, name: string) => void;
+  onCreate: (kind: CreatableKind) => void;
+  /** Moves a timeline under `parent` (the root for null) at `index`, or at the end. */
+  onReparent: (id: string, parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onPlay: (playing: boolean) => void;
 }
@@ -57,6 +94,69 @@ export function Timeline(props: Props) {
   const [zoom, setZoom] = useState(12);
   const [search, setSearch] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const rowDrag = useRef<RowDrag | null>(null);
+  const [dropTarget, setDropTarget] = useState<RowDrag["target"]>(null);
+
+  // Rows: a click selects, dragging up or down moves the timeline in the tree.
+  const rowDown = (event: PointerEvent<HTMLDivElement>, timeline: TimelineSummary) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("button, input")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    // Parts move with their owner only; they can still be selected.
+    rowDrag.current = { pointer: event.pointerId, id: timeline.id, startY: event.clientY, dragging: false, target: null };
+  };
+
+  const rowMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = rowDrag.current;
+    if (!drag || drag.pointer !== event.pointerId) return;
+    const dragged = project.timelines.find((t) => t.id === drag.id);
+    if (!dragged || dragged.part) return;
+    if (!drag.dragging && Math.abs(event.clientY - drag.startY) < 5) return;
+    drag.dragging = true;
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const row = under?.closest<HTMLElement>("[data-timeline]");
+    let target: RowDrag["target"] = null;
+    if (row) {
+      const id = row.dataset.timeline!;
+      const rect = row.getBoundingClientRect();
+      const y = (event.clientY - rect.top) / rect.height;
+      const zone: DropZone = y < 0.25 ? "before" : y > 0.75 ? "after" : "into";
+      if (!isWithin(project.timelines, id, drag.id)) target = { id, zone };
+    } else if (under?.closest(".timeline-list")) {
+      // Below the last row: the end of the root.
+      target = { id: null, zone: "after" };
+    }
+    drag.target = target;
+    setDropTarget(target);
+  };
+
+  const rowUp = (event: PointerEvent<HTMLDivElement>, timeline: TimelineSummary) => {
+    const drag = rowDrag.current;
+    if (!drag || drag.pointer !== event.pointerId) return;
+    rowDrag.current = null;
+    setDropTarget(null);
+    if (!drag.dragging) {
+      onSelect(timeline.id);
+      return;
+    }
+    const target = drag.target;
+    if (!target) return;
+    if (target.id === null) {
+      props.onReparent(drag.id, null, null);
+      return;
+    }
+    const over = project.timelines.find((t) => t.id === target.id);
+    const dragged = project.timelines.find((t) => t.id === drag.id);
+    if (!over || !dragged) return;
+    if (target.zone === "into") {
+      props.onReparent(drag.id, over.id, null);
+      return;
+    }
+    let index = over.index + (target.zone === "after" ? 1 : 0);
+    // The dragged timeline leaves its place first.
+    if (dragged.parent === over.parent && dragged.index < index) index -= 1;
+    props.onReparent(drag.id, over.parent, index);
+  };
   const frames = Math.max(project.length + Math.ceil(project.tempo), MIN_FRAMES);
   const width = PADDING + frames * zoom;
   const frameX = (f: number) => PADDING + f * zoom;
@@ -171,18 +271,45 @@ export function Timeline(props: Props) {
         <div className="timeline-list">
           <div className="timeline-search" style={{ height: RULER_HEIGHT }}>
             <input type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <button className="create-button" title="Create a timeline" onClick={() => setCreating(!creating)}>
+              +
+            </button>
+            {creating && (
+              <div className="menu-list create-menu" role="menu" onPointerLeave={() => setCreating(false)}>
+                {CREATABLE.map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    role="menuitem"
+                    onClick={() => {
+                      setCreating(false);
+                      props.onCreate(kind);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {rows.map(({ timeline, index }) => {
             const state = frame?.timelines[index];
             const classes = ["timeline-row"];
             if (timeline.id === selected) classes.push("selected");
             if (timeline.hidden || state?.visible === false) classes.push("dimmed");
+            if (dropTarget?.id === timeline.id) classes.push(`drop-${dropTarget.zone}`);
             return (
               <div
                 key={timeline.id}
                 className={classes.join(" ")}
+                data-timeline={timeline.id}
                 style={{ height: ROW_HEIGHT, paddingLeft: 8 + (query ? 0 : timeline.depth * 14) }}
-                onClick={() => onSelect(timeline.id)}
+                onPointerDown={(e) => rowDown(e, timeline)}
+                onPointerMove={rowMove}
+                onPointerUp={(e) => rowUp(e, timeline)}
+                onPointerCancel={() => {
+                  rowDrag.current = null;
+                  setDropTarget(null);
+                }}
                 onDoubleClick={() => setRenaming(timeline.id)}
                 title={`${timeline.kind}${timeline.hidden ? " (hidden)" : ""}`}
               >

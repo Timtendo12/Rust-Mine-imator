@@ -16,6 +16,12 @@ export interface TimelineSummary {
   kind: string;
   /** Number of ancestors in the timeline tree. */
   depth: number;
+  /** Parent in the tree, null at the root. */
+  parent: string | null;
+  /** Position among the parent's children. */
+  index: number;
+  /** Part of a model or scenery; moves and is removed with its owner only. */
+  part: boolean;
   /** Frames that have a keyframe, ascending. */
   keyframes: number[];
   hidden: boolean;
@@ -184,3 +190,19 @@ export const redo = () => invoke<Edited>("redo");
 
 /** Saves to the project's file, or to `path` (save as). */
 export const saveProject = (path: string | null = null) => invoke<Edited>("save_project", { path });
+
+/** Timeline types the create menu offers, by their names in project files. */
+export type CreatableKind = "folder" | "camera" | "pointlight" | "spotlight" | "cube" | "cone" | "cylinder" | "sphere" | "surface";
+
+/** Adds a timeline at the end of the list; cameras start at the work camera. */
+export const createTimeline = (kind: CreatableKind) => invoke<Edited & { created: string[] }>("create_timeline", { kind });
+
+/** Removes timelines and everything below them. */
+export const removeTimelines = (timelines: string[]) => invoke<Edited>("remove_timelines", { timelines });
+
+export const duplicateTimelines = (timelines: string[]) =>
+  invoke<Edited & { created: string[] }>("duplicate_timelines", { timelines });
+
+/** Moves timelines under `parent` (the root for null), at `index` among its children or at the end. */
+export const reparentTimelines = (timelines: string[], parent: string | null, index: number | null) =>
+  invoke<Edited>("reparent_timelines", { timelines, parent, index });

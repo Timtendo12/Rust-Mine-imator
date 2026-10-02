@@ -58,7 +58,7 @@ Legend: **done** · **partial** · **not started**
 | Save id remapping when importing | not started |
 | Undo / redo (commands replacing 821 action scripts) | partial: snapshot-based history (100 steps) with merged drags; edits so far: values at the marker (with the keyframe rules of `tl_value_set`), moving and removing keyframes, renaming and hiding timelines |
 | Selection, copy / paste, duplicate | not started |
-| Timeline operations (add, remove, reparent, parts of models) | not started |
+| Timeline operations (add, remove, reparent, parts of models) | partial: creating folders, cameras (at the work camera), lights and shapes (with their own template); removing with children and clearing references (`tl_remove_clean`); duplicating subtrees; reparenting and reordering by dragging in the list. Not yet: creating characters, blocks, scenery, items, text and particles (workbench settings), multiple selection, copy and paste |
 | Keyframe operations (add, move, select, copy, transitions) | not started |
 | Library operations (templates, resources) | not started |
 

@@ -9,7 +9,7 @@
 
 use crate::Project;
 use mi_core::SaveId;
-use mi_format::project::{Background, ProjectInfo, RenderSettings, Timeline};
+use mi_format::project::{Background, ProjectInfo, RenderSettings, Template, Timeline};
 
 /// Steps kept for undo (`history_max` in the original is 100).
 pub const HISTORY_LIMIT: usize = 100;
@@ -19,6 +19,7 @@ pub const HISTORY_LIMIT: usize = 100;
 #[derive(Debug, Clone, PartialEq)]
 enum Snapshot {
     Timeline { id: SaveId, index: usize, timeline: Option<Box<Timeline>> },
+    Template { id: SaveId, index: usize, template: Option<Box<Template>> },
     Info(Box<ProjectInfo>),
     Background(Box<Background>),
     Render(Box<RenderSettings>),
@@ -28,6 +29,7 @@ impl Snapshot {
     fn same_object(&self, other: &Snapshot) -> bool {
         match (self, other) {
             (Snapshot::Timeline { id: a, .. }, Snapshot::Timeline { id: b, .. }) => a == b,
+            (Snapshot::Template { id: a, .. }, Snapshot::Template { id: b, .. }) => a == b,
             (Snapshot::Info(_), Snapshot::Info(_))
             | (Snapshot::Background(_), Snapshot::Background(_))
             | (Snapshot::Render(_), Snapshot::Render(_)) => true,
@@ -96,6 +98,61 @@ impl Edit<'_> {
             &probe,
         );
         Some(&mut self.project.file.objects.timelines[index])
+    }
+
+    /// Adds a timeline at `index` in the list (the tree order comes from
+    /// its parent and tree index).
+    pub fn insert_timeline(&mut self, index: usize, timeline: Timeline) {
+        let id = timeline.id.clone();
+        let probe = Snapshot::Timeline { id: id.clone(), index, timeline: None };
+        self.record(|_| Snapshot::Timeline { id: id.clone(), index, timeline: None }, &probe);
+        let timelines = &mut self.project.file.objects.timelines;
+        timelines.insert(index.min(timelines.len()), timeline);
+        self.project.rebuild_indices();
+    }
+
+    /// Removes a timeline (not its children).
+    pub fn remove_timeline(&mut self, id: &SaveId) -> Option<Timeline> {
+        self.timeline(id)?;
+        let index = self.project.timeline_index(id)?;
+        let removed = self.project.file.objects.timelines.remove(index);
+        self.project.rebuild_indices();
+        Some(removed)
+    }
+
+    /// A template to change.
+    pub fn template(&mut self, id: &SaveId) -> Option<&mut Template> {
+        let index = self.project.file.objects.templates.iter().position(|t| &t.id == id)?;
+        let probe = Snapshot::Template { id: id.clone(), index, template: None };
+        self.record(
+            |p| Snapshot::Template {
+                id: id.clone(),
+                index,
+                template: Some(Box::new(p.file.objects.templates[index].clone())),
+            },
+            &probe,
+        );
+        Some(&mut self.project.file.objects.templates[index])
+    }
+
+    /// Adds a template to the library.
+    pub fn insert_template(&mut self, template: Template) {
+        let id = template.id.clone();
+        let index = self.project.file.objects.templates.len();
+        let probe = Snapshot::Template { id: id.clone(), index, template: None };
+        self.record(|_| Snapshot::Template { id: id.clone(), index, template: None }, &probe);
+        self.project.file.objects.templates.push(template);
+        self.project.rebuild_indices();
+    }
+
+    /// A new save id that no object of the project has.
+    pub fn new_id(&mut self) -> SaveId {
+        self.project.new_id()
+    }
+
+    /// Rebuilds the tree, for edits that look at it after moving timelines.
+    pub fn refresh_tree(&mut self) {
+        self.project.rebuild_tree();
     }
 
     pub fn info(&mut self) -> &mut ProjectInfo {
@@ -189,6 +246,14 @@ impl Project {
                     timeline: found.map(|i| Box::new(self.file.objects.timelines[i].clone())),
                 }
             }
+            Snapshot::Template { id, index, .. } => {
+                let found = self.file.objects.templates.iter().position(|t| &t.id == id);
+                Snapshot::Template {
+                    id: id.clone(),
+                    index: found.unwrap_or(*index),
+                    template: found.map(|i| Box::new(self.file.objects.templates[i].clone())),
+                }
+            }
             Snapshot::Info(_) => Snapshot::Info(Box::new(self.file.info.clone())),
             Snapshot::Background(_) => Snapshot::Background(Box::new(self.file.background.clone())),
             Snapshot::Render(_) => Snapshot::Render(Box::new(self.file.render.clone())),
@@ -210,6 +275,19 @@ impl Project {
                         (None, None) => {}
                     }
                     // Indices shift when timelines come and go.
+                    self.rebuild_indices();
+                }
+                Snapshot::Template { id, index, template } => {
+                    let templates = &mut self.file.objects.templates;
+                    let current = templates.iter().position(|t| &t.id == id);
+                    match (current, template) {
+                        (Some(i), Some(t)) => templates[i] = (**t).clone(),
+                        (Some(i), None) => {
+                            templates.remove(i);
+                        }
+                        (None, Some(t)) => templates.insert((*index).min(templates.len()), (**t).clone()),
+                        (None, None) => {}
+                    }
                     self.rebuild_indices();
                 }
                 Snapshot::Info(info) => self.file.info = (**info).clone(),
