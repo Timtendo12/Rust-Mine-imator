@@ -10,13 +10,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueKind {
     /// Plain number. Some on/off values are numbers rather than booleans in
-    /// the original (`BG_TWILIGHT`, `CAM_LENS_DIRT`, ...) and one colour is
-    /// stored as a GameMaker colour integer (`BG_FOG_OBJECT_COLOR`); files
-    /// depend on that, so it is kept.
+    /// the original (`BG_TWILIGHT`, `CAM_LENS_DIRT`, ...); files depend on
+    /// that, so it is kept.
     Number,
     /// `tl_value_is_bool`
     Bool,
-    /// `tl_value_is_color`
+    /// `tl_value_is_color`, plus `BG_FOG_OBJECT_COLOR`, which is missing from
+    /// that list in the original and therefore written as a colour integer.
     Color,
     /// `tl_value_is_string`, plus `ITEM_NAME` which is also text.
     String,
@@ -218,7 +218,7 @@ value_ids! {
     BgFogCustomColor "BG_FOG_CUSTOM_COLOR" Number,
     BgFogColor "BG_FOG_COLOR" Color,
     BgFogCustomObjectColor "BG_FOG_CUSTOM_OBJECT_COLOR" Number,
-    BgFogObjectColor "BG_FOG_OBJECT_COLOR" Number,
+    BgFogObjectColor "BG_FOG_OBJECT_COLOR" Color,
     BgFogDistance "BG_FOG_DISTANCE" Number,
     BgFogSize "BG_FOG_SIZE" Number,
     BgFogHeight "BG_FOG_HEIGHT" Number,
@@ -267,6 +267,13 @@ value_ids! {
 pub const VALUE_COUNT: usize = ValueId::ALL.len();
 
 impl ValueId {
+    /// Whether files hold this colour as a GameMaker colour integer instead
+    /// of `#RRGGBB`. The original leaves `BG_FOG_OBJECT_COLOR` out of its
+    /// list of colour values, so that is how it reads and writes it.
+    pub const fn color_stored_as_integer(self) -> bool {
+        matches!(self, ValueId::BgFogObjectColor)
+    }
+
     pub const fn index(self) -> usize {
         self as usize
     }
@@ -442,7 +449,7 @@ mod tests {
     fn kind_counts_match_the_original_predicates() {
         let count = |k| ValueId::ALL.iter().filter(|v| v.kind() == k).count();
         assert_eq!(count(ValueKind::Bool), 27); // tl_value_is_bool
-        assert_eq!(count(ValueKind::Color), 30); // tl_value_is_color
+        assert_eq!(count(ValueKind::Color), 31); // tl_value_is_color + BG_FOG_OBJECT_COLOR
         assert_eq!(count(ValueKind::String), 6); // tl_value_is_string + ITEM_NAME
         assert_eq!(count(ValueKind::Texture), 3);
         assert_eq!(count(ValueKind::Object), 6);

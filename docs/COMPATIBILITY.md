@@ -21,8 +21,18 @@ hold, on purpose or for now.
 - Numbers are written with at most five decimals and without trailing zeroes, including the
   original's `-0` for small negative numbers.
 - A null object reference inside keyframe values is written as the number `-4`, as in the original.
-- Keyframes of older projects that used `BG_SKY_CLOUDS_HEIGHT` or `BG_SKY_CLOUDS_Z` lose that value
-  on load. The original drops it too.
+
+## Bugs of the original fixed here
+
+Fixes change behaviour in memory, not the layout on disk, so files stay readable by the original.
+
+| Bug in the original | Fix |
+|---|---|
+| Cloud height keyframes (`BG_SKY_CLOUDS_Z`) of projects older than 2.0.0 are silently dropped on load, because the rename table maps the wrong key. | The value is carried over to `BG_SKY_CLOUDS_HEIGHT`. |
+| Leaf colours of projects older than 2.0.0 are only derived from the foliage colour if the project has at least one keyframe (the upgrade is a side effect of loading a keyframe). | Always derived. |
+| `part_root` is written for every timeline that is part of scenery but only read back for special blocks. | Read back for all of them. |
+| `BG_FOG_OBJECT_COLOR` is missing from the list of colour values, so it is written as a raw colour integer and is not clamped like other colours. | Treated as a colour everywhere; still written as the integer so the original can read it, and `#RRGGBB` is accepted too. |
+| A timeline whose `glint_tex` is `"null"` crashes on load. | Falls back to the built-in texture. |
 
 ## Not yet supported
 

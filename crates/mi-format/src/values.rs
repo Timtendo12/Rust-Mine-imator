@@ -65,6 +65,7 @@ impl ValueSet {
             let key = id.name();
             match value {
                 Value::Bool(b) => w.var_bool(key, *b),
+                Value::Color(c) if id.color_stored_as_integer() => w.var(key, c.to_gm() as f64),
                 Value::Color(c) => w.var_color(key, *c),
                 Value::Str(s) => w.var(key, s),
                 Value::Number(n) => w.var(key, *n),
@@ -114,9 +115,10 @@ fn update_value_name(name: &str, format: i32) -> &str {
         return name;
     }
     match name {
-        // The old key meant cloud thickness, which is no longer a value;
-        // translating it to a name that does not exist drops it.
-        "BG_SKY_CLOUDS_HEIGHT" => "BG_SKY_CLOUDS_Z",
+        // Cloud height used to be called Z; the old "height" meant
+        // thickness, which is no longer a value.
+        "BG_SKY_CLOUDS_Z" => "BG_SKY_CLOUDS_HEIGHT",
+        "BG_SKY_CLOUDS_HEIGHT" => "",
         "BRIGHTNESS" => "EMISSIVE",
         "CAM_SHAKE_HORIZONTAL_SPEED" => "CAM_SHAKE_SPEED_X",
         "CAM_SHAKE_VERTICAL_SPEED" => "CAM_SHAKE_SPEED_Y",
@@ -132,7 +134,13 @@ fn update_value_name(name: &str, format: i32) -> &str {
 fn read_value(id: ValueId, json: &Json) -> Option<Value> {
     match id.kind() {
         ValueKind::Bool => json.as_flag().map(Value::Bool),
-        ValueKind::Color => json.as_str().map(|s| Value::Color(mi_core::Color::from_hex(s))),
+        ValueKind::Color => match json {
+            Json::String(s) => Some(Value::Color(mi_core::Color::from_hex(s))),
+            Json::Number(n) if id.color_stored_as_integer() => {
+                Some(Value::Color(mi_core::Color::from_gm(n.clamp(0.0, 16_777_215.0) as u32)))
+            }
+            _ => None,
+        },
         ValueKind::String => json.as_str().map(|s| Value::Str(s.to_owned())),
         ValueKind::Number => json.as_real().map(Value::Number),
         ValueKind::Texture | ValueKind::Object => Some(Value::Ref(match json {
@@ -236,10 +244,37 @@ mod tests {
         assert_eq!(old[ValueId::CamShakeSpeedY], Value::Number(3.0));
         assert_eq!(old[ValueId::BgSkyCloudsHeight], defaults()[ValueId::BgSkyCloudsHeight]);
 
+        let z = parse(br#"{"BG_SKY_CLOUDS_Z": 512}"#).unwrap();
+        old.load_from(z.as_object().unwrap(), fmt::FORMAT_125);
+        assert_eq!(old[ValueId::BgSkyCloudsHeight], Value::Number(512.0));
+
         let mut new = defaults();
         new.load_from(map, fmt::CURRENT);
         assert_eq!(new[ValueId::Emissive], Value::Number(0.0));
         assert_eq!(new[ValueId::BgSkyCloudsHeight], Value::Number(99.0));
+    }
+
+    #[test]
+    fn fog_object_color_is_an_integer_on_disk() {
+        let d = defaults();
+        let mut v = d.clone();
+        v[ValueId::BgFogObjectColor] = Value::Color(Color::rgb(1, 2, 3));
+        let mut w = JsonWriter::new();
+        w.object_start(None);
+        v.save_diff(&mut w, "v", &d);
+        w.object_done();
+        let text = w.finish();
+        assert!(text.contains("\"BG_FOG_OBJECT_COLOR\": 197121"), "{text}");
+
+        let parsed = parse(text.as_bytes()).unwrap();
+        let mut loaded = d.clone();
+        loaded.load_from(parsed.as_object().unwrap().object("v").unwrap(), fmt::CURRENT);
+        assert_eq!(loaded, v);
+
+        let hex = parse(br##"{"BG_FOG_OBJECT_COLOR": "#010203"}"##).unwrap();
+        let mut from_hex = d.clone();
+        from_hex.load_from(hex.as_object().unwrap(), fmt::CURRENT);
+        assert_eq!(from_hex, v);
     }
 
     #[test]

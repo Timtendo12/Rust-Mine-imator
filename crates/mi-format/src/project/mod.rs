@@ -30,7 +30,6 @@ use mi_core::SaveId;
 pub(crate) struct LoadContext<'a> {
     pub format: i32,
     pub warnings: Vec<String>,
-    pub loaded_keyframes: usize,
     id_source: &'a mut dyn FnMut() -> SaveId,
 }
 
@@ -175,7 +174,7 @@ impl ProjectFile {
     /// Reads a `.miproject` (or `.backupN`) file.
     pub fn load(bytes: &[u8], options: LoadOptions) -> Result<Loaded<Self>, FormatError> {
         let (root, format, created_in) = read_header(bytes)?;
-        let mut ctx = LoadContext { format, warnings: Vec::new(), loaded_keyframes: 0, id_source: options.new_id };
+        let mut ctx = LoadContext { format, warnings: Vec::new(), id_source: options.new_id };
 
         // Timelines start from the defaults of an empty project, not from the
         // loaded background, exactly as the original does.
@@ -195,12 +194,6 @@ impl ProjectFile {
         }
 
         let objects = Objects::load(&root, &mut ctx, &defaults, &background);
-
-        // The original performs this as a side effect of upgrading a
-        // keyframe, so projects without keyframes keep the default colours.
-        if format < fmt::FORMAT_200_PRE_5 && ctx.loaded_keyframes > 0 {
-            background.upgrade_leaf_colors();
-        }
 
         let mut markers: Vec<Marker> = root
             .array("markers")
@@ -256,7 +249,7 @@ impl ObjectFile {
         new_id: &mut dyn FnMut() -> SaveId,
     ) -> Result<Loaded<Self>, FormatError> {
         let (root, format, created_in) = read_header(bytes)?;
-        let mut ctx = LoadContext { format, warnings: Vec::new(), loaded_keyframes: 0, id_source: new_id };
+        let mut ctx = LoadContext { format, warnings: Vec::new(), id_source: new_id };
         let objects = Objects::load(&root, &mut ctx, defaults, background);
         Ok(Loaded { file: Self { loaded_format: format, created_in, objects }, warnings: ctx.warnings })
     }
@@ -287,7 +280,7 @@ impl ParticlesFile {
         new_id: &mut dyn FnMut() -> SaveId,
     ) -> Result<Loaded<Self>, FormatError> {
         let (root, format, created_in) = read_header(bytes)?;
-        let mut ctx = LoadContext { format, warnings: Vec::new(), loaded_keyframes: 0, id_source: new_id };
+        let mut ctx = LoadContext { format, warnings: Vec::new(), id_source: new_id };
         let particles = match root.object("particles") {
             Some(map) => ParticleSpawner::load(map, format, &mut || ctx.new_id()),
             None => return Err(FormatError::Corrupted("missing \"particles\" object".to_owned())),
@@ -395,7 +388,7 @@ impl KeyframesFile {
         new_id: &mut dyn FnMut() -> SaveId,
     ) -> Result<Loaded<Self>, FormatError> {
         let (root, format, created_in) = read_header(bytes)?;
-        let mut ctx = LoadContext { format, warnings: Vec::new(), loaded_keyframes: 0, id_source: new_id };
+        let mut ctx = LoadContext { format, warnings: Vec::new(), id_source: new_id };
         let keyframes = root
             .array("keyframes")
             .unwrap_or_default()

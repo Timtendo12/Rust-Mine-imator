@@ -407,18 +407,18 @@ impl Background {
         if self.biome.is_empty() {
             self.biome = Background::default().biome;
         }
-    }
 
-    /// Separate leaf colours were introduced in 2.0.0; older projects derive
-    /// them from the foliage colour (`project_load_values_update`).
-    pub(crate) fn upgrade_leaf_colors(&mut self) {
-        self.leaves_oak_color = self.foliage_color;
-        self.leaves_spruce_color = colors::PLAINS_BIOME_FOLIAGE_2;
-        self.leaves_birch_color = colors::PLAINS_BIOME_FOLIAGE_2;
-        self.leaves_jungle_color = self.foliage_color;
-        self.leaves_acacia_color = self.foliage_color;
-        self.leaves_dark_oak_color = self.foliage_color;
-        self.leaves_mangrove_color = self.foliage_color;
+        // Separate leaf colours were introduced in 2.0.0; older projects
+        // derive them from the foliage colour.
+        if format < fmt::FORMAT_200_PRE_5 {
+            self.leaves_oak_color = self.foliage_color;
+            self.leaves_spruce_color = colors::PLAINS_BIOME_FOLIAGE_2;
+            self.leaves_birch_color = colors::PLAINS_BIOME_FOLIAGE_2;
+            self.leaves_jungle_color = self.foliage_color;
+            self.leaves_acacia_color = self.foliage_color;
+            self.leaves_dark_oak_color = self.foliage_color;
+            self.leaves_mangrove_color = self.foliage_color;
+        }
     }
 
     /// The background setting behind a `BG_*` value, in the representation
@@ -467,7 +467,7 @@ impl Background {
             BgFogCustomColor => flag_as_number(self.fog_color_custom),
             BgFogColor => Value::Color(self.fog_color),
             BgFogCustomObjectColor => flag_as_number(self.fog_object_color_custom),
-            BgFogObjectColor => num(self.fog_object_color.to_gm() as f64),
+            BgFogObjectColor => Value::Color(self.fog_object_color),
             BgFogDistance => num(self.fog_distance),
             BgFogSize => num(self.fog_size),
             BgFogHeight => num(self.fog_height),

@@ -355,6 +355,9 @@ impl Timeline {
             tl.part_of = v;
         }
         if !tl.part_of.is_null() {
+            if let Some(v) = load_obj(map, "part_root") {
+                tl.part_root = v;
+            }
             if kind == TlType::SpecialBlock {
                 if let Some(model) = map.object("model") {
                     tl.part_model = Some((
@@ -362,10 +365,6 @@ impl Timeline {
                         load_state_vars(model, "state"),
                     ));
                 }
-                if let Some(v) = load_obj(map, "part_root") {
-                    tl.part_root = v;
-                }
-
                 if let Some(v) = map.string("pattern_type") {
                     tl.pattern_type = v.to_owned();
                 }
@@ -417,7 +416,6 @@ impl Timeline {
                 let mut values = tl.default_values.clone();
                 values.load_from(values_map, format);
                 upgrade_keyframe(&mut values, kind, format, background);
-                ctx.loaded_keyframes += 1;
                 tl.keyframes.push(Keyframe { position, values });
             }
             // One keyframe per position, the last one in the file winning,
