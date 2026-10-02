@@ -185,6 +185,7 @@ pub struct AssetPack {
     model_order: Vec<String>,
     model_files: Mutex<HashMap<String, Arc<ModelFile>>>,
     manifest: JsonObject,
+    blocks: std::sync::OnceLock<crate::Blocks>,
 }
 
 impl std::fmt::Debug for AssetPack {
@@ -196,6 +197,11 @@ impl std::fmt::Debug for AssetPack {
 const ASSETS: &str = "assets/minecraft/";
 
 impl AssetPack {
+    /// The blocks of the pack, loaded the first time they are asked for.
+    pub fn blocks(&self) -> &crate::Blocks {
+        self.blocks.get_or_init(|| crate::Blocks::load(self))
+    }
+
     /// Opens the pack from the archive and manifest contents.
     pub fn load(zip_bytes: Vec<u8>, manifest: &[u8]) -> Result<Self, PackError> {
         let archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes))?;
@@ -216,7 +222,7 @@ impl AssetPack {
                 models.insert(def.name.clone(), def);
             }
         }
-        Ok(Self { archive: Mutex::new(archive), models, model_order, model_files: Mutex::default(), manifest })
+        Ok(Self { archive: Mutex::new(archive), models, model_order, model_files: Mutex::default(), manifest, blocks: Default::default() })
     }
 
     /// Opens the pack from the `Data/Minecraft` folder for `version`.

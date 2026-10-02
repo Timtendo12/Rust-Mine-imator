@@ -12,7 +12,7 @@ Legend: **done** · **partial** · **not started**
 | 0 | Repository, workspace, Tauri + React shell, docs | done |
 | 1 | Core tables and file formats | partial (see below) |
 | 2 | Animation: value evaluation, easing, hierarchy, matrices, bend, IK, paths | partial (see below) |
-| 3 | Assets: Minecraft pack, block and character models, atlases, schematics | not started |
+| 3 | Assets: Minecraft pack, block and character models, atlases, schematics | partial (see below) |
 | 4 | Renderer (low quality) and viewport | partial (see below) |
 | 5 | Editor shell: docking, timeline, editors, workbench, undo | not started |
 | 6 | Renderer (high quality) and post effects | not started |
@@ -86,7 +86,7 @@ Legend: **done** · **partial** · **not started**
 | Feature | Status |
 |---|---|
 | Minecraft asset pack loading | done (bundled 1.20.2; version switching and downloads not yet) |
-| Block states, block models, render models, connected blocks | not started |
+| Block states, block models, render models, connected blocks | partial: manifest blocks and ids, state defaults, variant and multipart blockstates, model parents and textures, element and variant rotation, UV lock, weighted variants, face culling between neighbours. Every state value of the bundled pack resolves. Not yet: connected blocks (`block_set_*`: fences, panes, stairs shapes, redstone), liquids, waterlogging, animated textures beyond the first frame, wind and subsurface values, resource pack block textures. |
 | Character and special block models (`.mimodel`), states | done: states choose files, textures and hidden parts/shapes; drawn in the viewport with bending. Armour, patterns (banners), model colour palettes and 3D planes not yet. |
 | Texture atlases, animated textures, biome tints | not started |
 | Resource packs, material and normal maps | not started |
@@ -108,7 +108,8 @@ Legend: **done** · **partial** · **not started**
 | Sky background image, sun and moon discs, stars, clouds | not started |
 | Ground | done: pack texture tinted by biome colour (resource pack ground textures not yet) |
 | Characters and special blocks | done (body parts, textured, bent) |
-| Blocks, scenery, items, text, paths, particles | not started |
+| Blocks | done for block templates (with repeat and randomised variants) and block timelines of scenery; one mesh per texture, tinted like the original |
+| Scenery, items, text, paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | not started |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |

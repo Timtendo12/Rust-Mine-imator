@@ -79,6 +79,7 @@ pub enum ViewportError {
 #[derive(Default)]
 struct Cache {
     meshes: HashMap<String, MeshId>,
+    groups: HashMap<String, Vec<(String, MeshId)>>,
     /// `None` remembers textures that could not be loaded.
     textures: HashMap<String, Option<TextureId>>,
     /// Meshes of bent body parts, which change during animation.
@@ -113,6 +114,16 @@ impl SceneResources for Resources<'_> {
         }
         self.cache.meshes.insert(key, id);
         id
+    }
+
+    fn meshes(&mut self, key: String, build: &dyn Fn() -> Vec<(String, MeshData)>) -> Vec<(String, MeshId)> {
+        if let Some(group) = self.cache.groups.get(&key) {
+            return group.clone();
+        }
+        let group: Vec<(String, MeshId)> =
+            build().into_iter().map(|(name, mesh)| (name, self.renderer.add_mesh(&mesh))).collect();
+        self.cache.groups.insert(key, group.clone());
+        group
     }
 
     fn texture(&mut self, key: String, load: &dyn Fn() -> Option<Rgba>) -> Option<TextureId> {

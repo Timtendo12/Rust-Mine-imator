@@ -114,8 +114,8 @@ fn bend_setup<'a>(shape: &ModelShape, bend: Option<&'a Bend>, angles: Vec3, styl
     }
     // Limit to the part's range first (`model_part_fill_shape_vbuffer_map`).
     let mut limited = angles;
-    for i in X..=Z {
-        limited[i] = limited[i].clamp(bend.direction_min[i], bend.direction_max[i]);
+    for (i, angle) in limited.iter_mut().enumerate() {
+        *angle = angle.clamp(bend.direction_min[i], bend.direction_max[i]);
     }
     if limited == [0.0; 3] {
         return None;

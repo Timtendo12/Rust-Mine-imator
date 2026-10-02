@@ -17,6 +17,9 @@ use mi_render::{ground_mesh, shape_mesh, Camera, MeshId, Shape, ShapeSettings, S
 /// and builds or loads something only the first time its key is asked for.
 pub trait SceneResources {
     fn mesh(&mut self, key: String, build: &dyn Fn() -> MeshData) -> MeshId;
+    /// Several meshes built together, each with a name (blocks give one
+    /// mesh per texture).
+    fn meshes(&mut self, key: String, build: &dyn Fn() -> Vec<(String, MeshData)>) -> Vec<(String, MeshId)>;
     fn texture(&mut self, key: String, load: &dyn Fn() -> Option<Rgba>) -> Option<TextureId>;
 }
 
@@ -148,10 +151,10 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
 
 /// Builds the scene of `project` at frame `marker`.
 ///
-/// Drawn so far: shapes, body parts of characters and special blocks, the
-/// textured ground, the sun, point and spot lights (as point lights, which
-/// is what the low quality modes do) and fog. Blocks, scenery, items, text
-/// and particles are not drawn yet.
+/// Drawn so far: shapes, blocks, body parts of characters and special
+/// blocks, the textured ground, the sun, point and spot lights (as point lights, which
+/// is what the low quality modes do) and fog. Scenery, items, text and
+/// particles are not drawn yet.
 pub fn build_scene(
     project: &Project,
     inputs: SceneInputs,
@@ -288,6 +291,46 @@ pub fn build_scene(
                     objects.push(object);
                 }
             }
+            TlType::Block => {
+                let Some(pack) = inputs.pack else { continue };
+                if inherited.alpha <= 0.0 {
+                    continue;
+                }
+                let template = timeline.temp.as_id().and_then(|id| project.template(id));
+                // Blocks that are part of scenery name their block themselves.
+                let (name, state, repeat, randomize) = match (&timeline.part_block, template) {
+                    (Some((name, state)), template) => {
+                        (name, state, [1.0; 3], template.is_none_or(|t| t.block_randomize))
+                    }
+                    (None, Some(t)) if t.kind == TempType::Block => {
+                        let repeat = if t.block_repeat_enable { t.block_repeat } else { [1.0; 3] };
+                        (&t.block_name, &t.block_state, repeat, t.block_randomize)
+                    }
+                    _ => continue,
+                };
+                let blocks = pack.blocks();
+                let Some(block) = blocks.def(name) else { continue };
+                let full_state = block.full_state(state);
+                let repeat = repeat.map(|r| r.round().clamp(1.0, MAX_BLOCK_REPEAT));
+                // The builder runs along Y first; the mesh is turned to
+                // match, as the original does "for legacy support".
+                let size = [repeat[1] as usize, repeat[0] as usize, repeat[2] as usize];
+                let state_key: Vec<String> = full_state.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                let key = format!("block:{name}:{}:{size:?}:{randomize}", state_key.join(","));
+                let meshes = resources.meshes(key, &|| blocks.grid_meshes(pack, block, &full_state, size, randomize));
+
+                let turn = mi_anim::Mat4::build([0.0, repeat[1] * 16.0, 0.0], [0.0, 0.0, 90.0], [1.0; 3]);
+                let matrix = turn.then(&node.matrix_render).to_f32();
+                for (texture_name, mesh) in meshes {
+                    let mut object = RenderObject::new(mesh, matrix);
+                    object.texture = pack_texture(resources, Some(pack), &texture_name);
+                    apply_material(&mut object, inherited, texture_tint(Some(pack), &texture_name, background), 1.0);
+                    object.unlit = unlit;
+                    object.fog = timeline.appearance.fog;
+                    object.backfaces = timeline.appearance.backfaces;
+                    objects.push(object);
+                }
+            }
             _ => {}
         }
     }
@@ -315,6 +358,9 @@ pub fn build_scene(
         objects,
     }
 }
+
+/// Largest repeat count along one axis of a block template.
+const MAX_BLOCK_REPEAT: f64 = 256.0;
 
 /// The work camera a project was saved with.
 pub fn saved_work_camera(project: &Project) -> WorkCamera {
@@ -346,6 +392,11 @@ mod tests {
             assert!(build().vertices.len() % 3 == 0);
             self.keys.push(key);
             MeshId::from_raw(self.keys.len() - 1)
+        }
+        fn meshes(&mut self, key: String, build: &dyn Fn() -> Vec<(String, MeshData)>) -> Vec<(String, MeshId)> {
+            let built = build();
+            self.keys.push(key);
+            built.into_iter().enumerate().map(|(i, (name, _))| (name, MeshId::from_raw(1000 + i))).collect()
         }
         fn texture(&mut self, key: String, load: &dyn Fn() -> Option<Rgba>) -> Option<TextureId> {
             let loaded = load().is_some();
@@ -502,5 +553,39 @@ mod tests {
         assert!(heights.iter().any(|&z| z >= 24.0), "{heights:?}");
         // The bent arm has its own mesh.
         assert!(recorder.keys.iter().any(|k| k.contains("left_arm") && k.contains("4500")), "{:?}", recorder.keys);
+    }
+
+    #[test]
+    fn blocks_are_drawn_per_texture_and_repeated() {
+        let pack = pack();
+        let mut file = ProjectFile::new(1.0, 1.0);
+        file.background.ground_show = false;
+        let mut grass = Template::new(SaveId::new("GRASS"), TempType::Block);
+        grass.block_name = "grass_block".into();
+        grass.block_repeat_enable = true;
+        grass.block_repeat = [3.0, 2.0, 1.0];
+        file.objects.templates.push(grass);
+        let mut tl = Timeline::new(SaveId::new("BLOCK"), TlType::Block, &file.defaults);
+        tl.temp = ObjRef::id("GRASS");
+        tl.parent_tree_index = Some(0);
+        file.objects.timelines.push(tl);
+        let project = Project::from_file(file, IdGenerator::new(3)).0;
+
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None };
+        let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
+        assert_eq!(recorder.keys.len(), 1);
+        assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
+        // Top, side, side overlay and dirt bottom.
+        assert!(scene.objects.len() >= 3, "{}", scene.objects.len());
+        assert!(scene.objects.iter().all(|o| o.texture.is_some()));
+        // The top is tinted with the grass colour, the bottom is not.
+        let tints: Vec<[f32; 4]> = scene.objects.iter().map(|o| o.blend_color).collect();
+        assert!(tints.iter().any(|t| *t != [1.0; 4]) && tints.contains(&[1.0; 4]), "{tints:?}");
+        // Turned so the repeat runs 3 along X and 2 along Y from the origin.
+        let m = glam::Mat4::from_cols_array(&scene.objects[0].model);
+        let corner = m.transform_point3(glam::Vec3::new(2.0 * 16.0, 0.0, 0.0));
+        assert!((corner - glam::Vec3::new(0.0, 0.0, 0.0)).length() < 1e-3, "{corner}");
+        let corner = m.transform_point3(glam::Vec3::new(0.0, 3.0 * 16.0, 0.0));
+        assert!((corner - glam::Vec3::new(48.0, 32.0, 0.0)).length() < 1e-3, "{corner}");
     }
 }

@@ -391,8 +391,8 @@ fn load_bend(map: &JsonObject, scale: Vec3, parent: Option<&PartContext>) -> Res
     let mut inherit_angle = default_angle;
     if inherit_bend {
         if let Some(parent_bend) = parent.and_then(|p| p.bend.as_ref()) {
-            for i in 0..3 {
-                inherit_angle[i] += parent_bend.inherit_angle[i];
+            for (angle, parent_angle) in inherit_angle.iter_mut().zip(parent_bend.inherit_angle) {
+                *angle += parent_angle;
             }
         }
     }

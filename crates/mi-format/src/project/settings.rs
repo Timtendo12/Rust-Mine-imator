@@ -499,9 +499,7 @@ mod tests {
 
     #[test]
     fn project_info_round_trip() {
-        let mut info = ProjectInfo::default();
-        info.name = "Tëst".into();
-        info.tempo = 30.0;
+        let mut info = ProjectInfo { name: "Tëst".into(), tempo: 30.0, ..Default::default() };
         info.view_main_camera = ViewCamera::Timeline(SaveId::new("CAM0000000000000"));
         info.timeline.region_start = Some(10.0);
         info.timeline.region_end = Some(48.0);
