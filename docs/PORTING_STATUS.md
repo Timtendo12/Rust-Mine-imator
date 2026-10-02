@@ -73,7 +73,7 @@ Legend: **done** · **partial** · **not started**
 | Hierarchy, inherit flags, value inheritance | done |
 | Timeline matrices (position, rotation, scale, rotation point) | done, including the default rotation point of templates (scenery, blocks, shapes, items, text); block-format models still use 0 |
 | Body part bend transform (children locked to the bent half) | done | 
-| Bending of the body part meshes themselves | not started |
+| Bending of the body part meshes themselves | done for blocks and planes, in the blocky and realistic styles (`model_shape_generate_block`, `model_shape_generate_plane`); 3D planes are bent as flat planes |
 | Inverse kinematics (two-bone limbs, pole target, blend) | done |
 | Paths (spline sampling, frames) and path following | done |
 | Inherit pose | partial: implemented, not covered by a test yet |
@@ -91,8 +91,8 @@ Legend: **done** · **partial** · **not started**
 | Texture atlases, animated textures, biome tints | not started |
 | Resource packs, material and normal maps | not started |
 | Skins (including download and old 64×32 layout) | not started |
-| Items, item sheets | not started |
-| Fonts and text meshes | not started |
+| Items, item sheets | partial: items from textures of the pack (`item/...`), flat or extruded; item sheets of resources not yet |
+| Fonts and text meshes | partial: the Minecraft sprite font and its text meshes; TrueType fonts of resources not yet |
 | Scenery from schematics and structures, block entities as timelines | partial: scenery files of a project are read and drawn, blocks that are timelines in the project (chests, doors, ...) are left out of the mesh. Not yet: creating those timelines when scenery is added, scenery from worlds, `.meshcache`, the "remove edges" setting, meshing on a background thread. |
 | World import (all chunk formats, preview, selection) | not started |
 
@@ -119,7 +119,7 @@ Legend: **done** · **partial** · **not started**
 | Work camera: fly mode (right drag + keys) | not started |
 | Timeline cameras (active camera view, FOV, orbit) | done |
 | Camera shake | not started |
-| Offscreen rendering with pixel readback | done (used by tests; export will build on it) |
+| Offscreen rendering with pixel readback | done (used by tests, thumbnails and export) |
 | High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | not started |
 | Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | not started |
 | Tonemapping, alpha modes, material formats | not started |
@@ -139,8 +139,8 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status | Notes |
 |---|---|---|
-| Startup screen | partial | Recent projects with thumbnails, sort, remove, browse. No "New project", pinning or list view. |
-| Menu bar | partial | File, Edit, Render, View, Help as in the original; only open, close and navigation work, the rest is shown disabled |
+| Startup screen | partial | Recent projects with thumbnails, sort, remove, browse, new project. No pinning or list view. |
+| Menu bar | partial | File, Edit, Render, View, Help as in the original; items of features that are not ported are shown disabled |
 | Properties panel | partial | Project settings (name, author, description, render size, tempo), render settings (samples, distance, main effects), environment (time, rotation, clouds, ground, twilight, fog, wind, scene colours, texture speed) are editable with undo; library and resources are read-only. The selected timeline has a frame editor with every number, switch, colour, choice and text value its type supports (position, rotation, scale, bend, colour, surface, light, camera effects, background, text, visibility and transition), grouped like the original's; values that point at other objects (textures, paths, IK targets, sounds) and the bezier handles are not editable yet. Its settings that are not animated can be switched too: what it inherits from its parent, appearance options, and lock and hide flags |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
@@ -150,17 +150,17 @@ Legend: **done** · **partial** · **not started**
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes and reparenting; markers, regions and audio clips not yet |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |
-| Properties tabs (project, render, library, background, resources) | not started | |
-| Template editor, timeline editor, frame editor | not started | |
+| Properties tabs (project, render, library, background, resources) | partial | Project, render and background settings are edited in the properties panel; library and resources only list what the project has |
+| Template editor, timeline editor, frame editor | partial | Frame editor: all number, switch, colour, choice and text values of the selected timelines, by group. Timeline editor: inherit, appearance and lock switches. Not yet: values that refer to other objects (textures, paths, IK targets, sounds), the bezier curve editor, the template editor |
 | Ground editor | not started | |
 | Settings (program, interface, controls) | not started | |
-| Workbench and placing objects | not started | |
+| Workbench and placing objects | partial | Workbench with search for basic objects, characters, special blocks, blocks and items; new objects appear at the origin instead of being placed with the mouse |
 | Toolbar menus, context menus, tooltips, toasts, shortcut bar | not started | |
-| Popups (new project, save as, export, skin download, pattern and armour editors, ...) | not started | |
+| Popups (new project, save as, export, skin download, pattern and armour editors, ...) | partial | Export animation; saving and opening use the system dialogs |
 | Themes and accent colours, interface scale | not started | |
 | Translations | not started | |
 | Key bindings | not started | |
-| Recent projects, autosave, asset version updates | not started | |
+| Recent projects, autosave, asset version updates | partial | Recent projects are kept and shown; autosave and asset updates not yet |
 | Crash / error reporting, log file | not started | |
 
 ## Dropped on purpose
