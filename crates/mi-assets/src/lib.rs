@@ -3,6 +3,7 @@
 
 pub mod blocks;
 pub mod builder;
+pub mod item;
 pub mod legacy;
 mod liquid;
 pub mod model_file;
@@ -14,6 +15,7 @@ pub mod text;
 
 pub use builder::{build_grid, Grid, GridBlock, GridSource};
 pub use blocks::{block_mesh, pick_weighted, BlockDef, Blocks, Depth, Dir, PlacedBlock, RandomOffset, RenderModel};
+pub use item::{item_mesh, ITEM_SIZE};
 pub use legacy::{LegacyBlock, LegacyBlocks};
 pub use model_file::{Bend, ModelError, ModelFile, ModelPart, ModelShape, ShapeKind};
 pub use pack::{decode_square, AssetPack, ModelDef, PackError, ResolvedModel, Rgba};

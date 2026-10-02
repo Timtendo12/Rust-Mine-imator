@@ -118,6 +118,7 @@ pub fn run() {
             editing::workbench_items,
             editing::create_model,
             editing::create_block,
+            editing::create_item,
             editing::project_settings,
             editing::set_setting,
             editing::set_project_info,

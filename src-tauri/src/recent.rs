@@ -51,6 +51,21 @@ fn local_now() -> f64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }
 
+/// A path as the recent list stores it: forward slashes, none doubled, so
+/// that one file is one entry however its path was spelled.
+fn normalized_path(path: &std::path::Path) -> String {
+    let mut out = String::new();
+    for c in path.to_string_lossy().chars() {
+        let c = if c == '\\' { '/' } else { c };
+        // A doubled slash at the very start is a network path.
+        if c == '/' && out.ends_with('/') && out.len() > 1 {
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// The entry for a project that has just been opened or saved.
 pub fn entry_for(project: &Project) -> Option<RecentProject> {
     let path = project.path()?;
@@ -59,7 +74,7 @@ pub fn entry_for(project: &Project) -> Option<RecentProject> {
         name: info.name.clone(),
         author: info.author.clone(),
         description: info.description.clone(),
-        filename: path.to_string_lossy().replace('\\', "/"),
+        filename: normalized_path(path),
         last_opened: gm_date_from_unix(local_now()),
         pinned: false,
     })
@@ -210,5 +225,18 @@ mod tests {
         assert!(url.starts_with("data:image/png;base64,iVBORw0KGg"));
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::normalized_path;
+    use std::path::Path;
+
+    #[test]
+    fn paths_are_spelled_one_way() {
+        assert_eq!(normalized_path(Path::new(r"C:\Users\Me\Projects\A\A.miproject")), "C:/Users/Me/Projects/A/A.miproject");
+        assert_eq!(normalized_path(Path::new("C://Users//Me/A.miproject")), "C:/Users/Me/A.miproject");
+        assert_eq!(normalized_path(Path::new(r"\\server\share\A.miproject")), "//server/share/A.miproject");
     }
 }

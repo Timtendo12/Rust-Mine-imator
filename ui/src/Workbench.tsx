@@ -14,13 +14,14 @@ const BASIC: [CreatableKind, string][] = [
   ["surface", "Surface"],
 ];
 
-type Category = "basic" | "characters" | "specialBlocks" | "blocks";
+type Category = "basic" | "characters" | "specialBlocks" | "blocks" | "items";
 
 const CATEGORIES: [Category, string][] = [
   ["basic", "Basic"],
   ["characters", "Character"],
   ["specialBlocks", "Special block"],
   ["blocks", "Block"],
+  ["items", "Item"],
 ];
 
 // The lists come from the asset pack and do not change while running.
@@ -35,11 +36,12 @@ interface Props {
   onCreate: (kind: CreatableKind) => void;
   onCreateModel: (name: string) => void;
   onCreateBlock: (name: string) => void;
+  onCreateItem: (name: string) => void;
   onClose: () => void;
 }
 
 /** The workbench: picks something to add to the scene. */
-export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onClose }: Props) {
+export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onCreateItem, onClose }: Props) {
   const [category, setCategory] = useState<Category>("basic");
   const [items, setItems] = useState<WorkbenchItems | null>(null);
   const [search, setSearch] = useState("");
@@ -78,7 +80,7 @@ export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onCl
     entries = BASIC.map(([kind, label]) => ({ key: kind, label, action: () => onCreate(kind) }));
   } else {
     const list = items?.[category] ?? [];
-    const create = category === "blocks" ? onCreateBlock : onCreateModel;
+    const create = category === "blocks" ? onCreateBlock : category === "items" ? onCreateItem : onCreateModel;
     entries = list.map((item) => ({ key: item.name, label: item.label, action: () => create(item.name) }));
   }
   const shown = entries.filter((e) => !query || e.label.toLowerCase().includes(query));

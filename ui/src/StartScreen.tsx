@@ -6,6 +6,7 @@ interface Props {
   busy: boolean;
   onBrowse: () => void;
   onOpen: (path: string) => void;
+  onNew: () => void;
 }
 
 /** "Last opened 14.9.2026", as the original shows it for older entries. */
@@ -18,7 +19,7 @@ function lastOpened(item: RecentItem): string {
 }
 
 /** The startup screen: logo and recent projects. */
-export function StartScreen({ version, busy, onBrowse, onOpen }: Props) {
+export function StartScreen({ version, busy, onBrowse, onOpen, onNew }: Props) {
   const [items, setItems] = useState<RecentItem[] | null>(null);
   const [byName, setByName] = useState(false);
 
@@ -48,7 +49,7 @@ export function StartScreen({ version, busy, onBrowse, onOpen }: Props) {
           <button className="secondary" onClick={onBrowse} disabled={busy}>
             {busy ? "Opening…" : "Browse…"}
           </button>
-          <button disabled title="Creating projects is not available yet">
+          <button onClick={onNew} disabled={busy}>
             New project
           </button>
         </div>

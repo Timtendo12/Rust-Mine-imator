@@ -159,7 +159,7 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
 /// Drawn so far: shapes, blocks, body parts of characters and special
 /// blocks, the textured ground, the sun, point and spot lights (as point lights, which
 /// is what the low quality modes do), fog, scenery and text in the
-/// Minecraft font. Items and particles are not drawn yet.
+/// Minecraft font, and items. Particles are not drawn yet.
 pub fn build_scene(
     project: &Project,
     inputs: SceneInputs,
@@ -347,6 +347,38 @@ pub fn build_scene(
                 let matrix = block_turn(repeat[1]).then(&node.matrix_render).to_f32();
                 let look = BlockLook { pack, background, inherited, timeline, unlit };
                 push_block_objects(&mut objects, resources, &meshes, matrix, &look);
+            }
+            TlType::Item => {
+                let Some(pack) = inputs.pack else { continue };
+                let Some(template) = timeline.temp.as_id().and_then(|id| project.template(id)) else { continue };
+                if inherited.alpha <= 0.0 {
+                    continue;
+                }
+                // A keyframe can swap the item; otherwise it is the template's.
+                let slot_name = |slot: f64| {
+                    let list = pack.manifest().array("item_textures")?;
+                    list.get(slot.max(0.0) as usize)?.as_str().map(str::to_owned)
+                };
+                let name = if node.values.flag(ValueId::CustomItemSlot) {
+                    match node.values[ValueId::ItemName].as_str() {
+                        Some(name) if !name.is_empty() => Some(name.to_owned()),
+                        _ => slot_name(node.values.number(ValueId::ItemSlot)),
+                    }
+                } else {
+                    template.item_name.clone().or_else(|| slot_name(template.item_slot))
+                };
+                let Some(name) = name else { continue };
+                let is_3d = template.item.is_3d;
+                let mesh = resources.mesh(format!("item:{name}:{is_3d}"), &|| {
+                    pack.block_texture(&name).map(|image| mi_assets::item_mesh(&image, is_3d)).unwrap_or_default()
+                });
+                let mut object = RenderObject::new(mesh, node.matrix_render.to_f32());
+                object.texture = resources.texture(format!("block:{name}"), &|| pack.block_texture(&name));
+                apply_material(&mut object, inherited, Color::WHITE, 1.0);
+                object.unlit = unlit;
+                object.fog = timeline.appearance.fog;
+                object.backfaces = timeline.appearance.backfaces;
+                objects.push(object);
             }
             TlType::Text => {
                 let Some(font) = inputs.font else { continue };
@@ -787,5 +819,37 @@ mod tests {
         let copy = glam::Mat4::from_cols_array(&scene.objects[1].model);
         let p = copy.transform_point3(glam::Vec3::new(32.0, 0.0, 0.0)) + centre;
         assert!((p - glam::Vec3::new(0.0, 32.0, 0.0)).length() < 1e-3, "{p}");
+    }
+
+    #[test]
+    fn items_and_text_are_drawn() {
+        let pack = pack();
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/Data/Fonts/minecraft.png");
+        let font = mi_assets::SpriteFont::minecraft(&std::fs::read(data).unwrap()).unwrap();
+        let mut file = ProjectFile::new(1.0, 1.0);
+        file.background.ground_show = false;
+        let mut sword = Template::new(SaveId::new("SWORD"), TempType::Item);
+        sword.item_name = Some("item/diamond_sword".into());
+        file.objects.templates.push(sword);
+        file.objects.templates.push(Template::new(SaveId::new("LABEL"), TempType::Text));
+        let mut item = Timeline::new(SaveId::new("ITEM"), TlType::Item, &file.defaults);
+        item.temp = ObjRef::id("SWORD");
+        item.parent_tree_index = Some(0);
+        file.objects.timelines.push(item);
+        let mut text = Timeline::new(SaveId::new("TEXT"), TlType::Text, &file.defaults);
+        text.temp = ObjRef::id("LABEL");
+        text.parent_tree_index = Some(1);
+        text.default_values[ValueId::Text] = Value::Str("Hello".into());
+        file.objects.timelines.push(text);
+        let project = Project::from_file(file, IdGenerator::new(3)).0;
+
+        let inputs = SceneInputs { pack: Some(&pack), font: Some(&font), ..Default::default() };
+        let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
+        assert_eq!(recorder.keys, ["item:item/diamond_sword:true", "text:Center:Center:Hello"]);
+        assert_eq!(recorder.textures, ["block:item/diamond_sword", "text:Center:Center:Hello"]);
+        assert_eq!(scene.objects.len(), 2);
+        assert!(scene.objects.iter().all(|o| o.texture.is_some()));
+        // The item turns around the middle of its bottom edge.
+        assert_eq!(scene.objects[0].model[12], -8.0);
     }
 }

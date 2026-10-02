@@ -58,7 +58,7 @@ Legend: **done** · **partial** · **not started**
 | Save id remapping when importing | not started |
 | Undo / redo (commands replacing 821 action scripts) | partial: snapshot-based history (100 steps) with merged drags; edits so far: values at the marker (with the keyframe rules of `tl_value_set`), moving and removing keyframes, renaming and hiding timelines |
 | Selection, copy / paste, duplicate | not started |
-| Timeline operations (add, remove, reparent, parts of models) | partial: creating folders, cameras (at the work camera), lights and shapes (with their own template); removing with children and clearing references (`tl_remove_clean`); duplicating subtrees; reparenting and reordering by dragging in the list. Characters, special blocks (with a timeline per model part in the model's hierarchy) and blocks in their default state, from a workbench with search. Not yet: workbench settings (states, skins, previews), scenery, items, text and particles, placing in the viewport, multiple selection, copy and paste |
+| Timeline operations (add, remove, reparent, parts of models) | partial: creating folders, cameras (at the work camera), lights and shapes (with their own template); removing with children and clearing references (`tl_remove_clean`); duplicating subtrees; reparenting and reordering by dragging in the list. Characters, special blocks (with a timeline per model part in the model's hierarchy), blocks in their default state and items, from a workbench with search. Not yet: workbench settings (states, skins, previews), scenery, text and particles, placing in the viewport, multiple selection, copy and paste |
 | Keyframe operations (add, move, select, copy, transitions) | not started |
 | Library operations (templates, resources) | not started |
 
@@ -111,7 +111,8 @@ Legend: **done** · **partial** · **not started**
 | Blocks | done for block templates (with repeat and randomised variants) and block timelines of scenery; one mesh per texture, tinted like the original |
 | Scenery | done (with repeat) |
 | Text | partial: text timelines in the Minecraft font (the original's sprite font, shipped as `Data/Fonts/minecraft.png`) with alignment and line breaks. Not yet: other fonts, 3D text, outlines, facing the camera |
-| Items, paths, particles | not started |
+| Items | partial: item timelines from pack textures, flat or extruded pixel by pixel (`render_generate_item`, `vbuffer_add_pixels`), and a keyframe's custom item. Not yet: item sheets of resources, facing the camera, spinning and bouncing |
+| Paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. Not yet: gizmos, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |

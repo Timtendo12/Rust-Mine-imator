@@ -180,6 +180,26 @@ impl Project {
         })
     }
 
+    /// Adds an item drawn from a texture of the asset pack (`temp_animate`
+    /// for item templates).
+    pub fn create_item(&mut self, texture_name: &str) -> SaveId {
+        self.edit("Create timeline", None, |edit| {
+            let mut template = Template::new(edit.new_id(), TempType::Item);
+            template.item_name = Some(texture_name.to_owned());
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let id = edit.new_id();
+            let mut timeline = Timeline::new(id.clone(), TlType::Item, &edit.project().file.defaults);
+            timeline.temp = ObjRef::Id(template_id);
+            timeline.parent = SaveId::root();
+            timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+            let end = edit.project().timelines().len();
+            edit.insert_timeline(end, timeline);
+            id
+        })
+    }
+
     /// Adds a timeline at the end of the root (`action_bench_create` for
     /// folders, cameras, lights and shapes). Shapes get a template of
     /// their own. Returns the new timeline's id.

@@ -5,6 +5,7 @@ import {
   appInfo,
   closeProject,
   createBlock,
+  createItem,
   createModel,
   createTimeline,
   duplicateTimelines,
@@ -368,7 +369,7 @@ export function App() {
             {error}
           </div>
         )}
-        <StartScreen version={info?.tracksVersion ?? null} busy={busy} onBrowse={browse} onOpen={loadProject} />
+        <StartScreen version={info?.tracksVersion ?? null} busy={busy} onBrowse={browse} onOpen={loadProject} onNew={() => void startNew()} />
       </div>
     );
   }
@@ -449,6 +450,7 @@ export function App() {
             onCreate={(kind: CreatableKind) => void create(() => createTimeline(kind))}
             onCreateModel={(name) => void create(() => createModel(name))}
             onCreateBlock={(name) => void create(() => createBlock(name))}
+            onCreateItem={(name) => void create(() => createItem(name))}
             onReparent={(id, parent, index) => void run(() => reparentTimelines([id], parent, index))}
             onPlay={setPlaying}
           />

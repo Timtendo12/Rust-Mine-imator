@@ -50,6 +50,7 @@ interface Props {
   onCreate: (kind: CreatableKind) => void;
   onCreateModel: (name: string) => void;
   onCreateBlock: (name: string) => void;
+  onCreateItem: (name: string) => void;
   /** Moves a timeline under `parent` (the root for null) at `index`, or at the end. */
   onReparent: (id: string, parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -277,6 +278,7 @@ export function Timeline(props: Props) {
                 onCreate={props.onCreate}
                 onCreateModel={props.onCreateModel}
                 onCreateBlock={props.onCreateBlock}
+                onCreateItem={props.onCreateItem}
                 onClose={() => setCreating(null)}
               />
             )}

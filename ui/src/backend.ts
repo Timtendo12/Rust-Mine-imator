@@ -236,6 +236,7 @@ export interface WorkbenchItems {
   characters: WorkbenchItem[];
   specialBlocks: WorkbenchItem[];
   blocks: WorkbenchItem[];
+  items: WorkbenchItem[];
 }
 
 /** What the workbench offers from the asset pack. */
@@ -278,3 +279,6 @@ export const setSelection = (timelines: string[]) => invoke<void>("set_selection
 
 /** Renders the current frame at the project's size into an image file. */
 export const exportImage = (path: string) => invoke<void>("export_image", { path });
+
+/** Adds an item drawn from a texture of the asset pack. */
+export const createItem = (name: string) => invoke<Edited & { created: string[] }>("create_item", { name });

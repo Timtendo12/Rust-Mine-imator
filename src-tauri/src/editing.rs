@@ -236,6 +236,7 @@ pub struct WorkbenchItems {
     characters: Vec<WorkbenchItem>,
     special_blocks: Vec<WorkbenchItem>,
     blocks: Vec<WorkbenchItem>,
+    items: Vec<WorkbenchItem>,
 }
 
 #[tauri::command]
@@ -254,7 +255,21 @@ pub fn workbench_items(state: State<'_, AppState>) -> WorkbenchItems {
     }
     let blocks = pack.blocks();
     items.blocks = blocks.names().map(|n| WorkbenchItem { name: n.to_owned(), label: language.asset_name("block", n) }).collect();
-    for list in [&mut items.characters, &mut items.special_blocks, &mut items.blocks] {
+    // Items are textures; their names come from the file names.
+    items.items = pack
+        .manifest()
+        .array("item_textures")
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|name| name.as_str())
+        // The list is the layout of the item sheet, which has empty slots.
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            let short = name.rsplit('/').next().unwrap_or(name);
+            WorkbenchItem { name: name.to_owned(), label: language.asset_name("item", short) }
+        })
+        .collect();
+    for list in [&mut items.characters, &mut items.special_blocks, &mut items.blocks, &mut items.items] {
         list.sort_by_key(|item| item.label.to_lowercase());
     }
     items
@@ -398,4 +413,15 @@ pub fn timeline_values(id: String, state: State<'_, AppState>) -> Result<Vec<cra
     let (scene, order) = state.evaluate(project, marker);
     let Some(node) = order.iter().position(|&i| i == index) else { return Ok(Vec::new()) };
     Ok(crate::frame_editor::value_groups(project.timelines()[index].kind, has_bend, &scene.nodes[node].values))
+}
+
+/// Adds an item drawn from a texture of the asset pack (`item/apple`).
+#[tauri::command]
+pub fn create_item(name: String, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let pack = state.pack().ok_or_else(|| CommandError::Invalid("the Minecraft assets are not loaded".into()))?;
+    if pack.block_texture(&name).is_none() {
+        return Err(CommandError::Invalid(format!("unknown item texture {name}")));
+    }
+    let (id, edited) = change(&state, |p| p.create_item(&name))?;
+    Ok(Created { edited, created: vec![id.to_string()] })
 }
