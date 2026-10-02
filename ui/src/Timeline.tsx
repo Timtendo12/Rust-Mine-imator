@@ -29,6 +29,9 @@ function isWithin(timelines: TimelineSummary[], id: string, ancestor: string): b
   return false;
 }
 
+/** How a click changes the selected timelines. */
+export type SelectMode = "only" | "toggle" | "add" | "range";
+
 /** Identifies a keyframe in sets. */
 export const keyframeId = (key: KeyframeKey) => `${key.timeline}:${key.position}`;
 
@@ -36,14 +39,15 @@ interface Props {
   project: ProjectSummary;
   frame: FrameState | null;
   marker: number;
-  selected: string | null;
+  /** Selected timelines; the last one is the one being edited. */
+  selection: string[];
   /** Selected keyframes, by `keyframeId`. */
   selectedKeyframes: Set<string>;
   playing: boolean;
   onSeek: (marker: number) => void;
   /** The frame under the mouse in the tracks, or null when it is elsewhere. */
   onHoverFrame: (frame: number | null) => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, mode: SelectMode) => void;
   onSelectKeyframes: (keys: KeyframeKey[]) => void;
   /** Called while dragging with the total offset from where the drag began. */
   onMoveKeyframes: (keys: KeyframeKey[], offset: number) => void;
@@ -53,8 +57,8 @@ interface Props {
   onCreateModel: (name: string) => void;
   onCreateBlock: (name: string) => void;
   onCreateItem: (name: string) => void;
-  /** Moves a timeline under `parent` (the root for null) at `index`, or at the end. */
-  onReparent: (id: string, parent: string | null, index: number | null) => void;
+  /** Moves timelines under `parent` (the root for null) at `index` among its other children, or at the end. */
+  onReparent: (ids: string[], parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
   onPlay: (playing: boolean) => void;
 }
@@ -81,7 +85,8 @@ interface Drag {
 
 /** The timeline panel: time and transport on top, timeline list on the left, keyframes on the right. */
 export function Timeline(props: Props) {
-  const { project, frame, marker, selected, selectedKeyframes, playing, onSeek, onSelect, onPlay } = props;
+  const { project, frame, marker, selection, selectedKeyframes, playing, onSeek, onSelect, onPlay } = props;
+  const selected = selection.length > 0 ? selection[selection.length - 1] : null;
   const tracks = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [zoom, setZoom] = useState(12);
@@ -136,26 +141,26 @@ export function Timeline(props: Props) {
     rowDrag.current = null;
     setDropTarget(null);
     if (!drag.dragging) {
-      onSelect(timeline.id);
+      onSelect(timeline.id, event.ctrlKey || event.metaKey ? "toggle" : event.shiftKey ? "range" : "only");
       return;
     }
     const target = drag.target;
     if (!target) return;
+    // A selected row takes the rest of the selection along.
+    const ids = selection.includes(drag.id) ? project.timelines.filter((t) => selection.includes(t.id)).map((t) => t.id) : [drag.id];
     if (target.id === null) {
-      props.onReparent(drag.id, null, null);
+      props.onReparent(ids, null, null);
       return;
     }
     const over = project.timelines.find((t) => t.id === target.id);
-    const dragged = project.timelines.find((t) => t.id === drag.id);
-    if (!over || !dragged) return;
+    if (!over || ids.some((id) => isWithin(project.timelines, over.id, id))) return;
     if (target.zone === "into") {
-      props.onReparent(drag.id, over.id, null);
+      props.onReparent(ids, over.id, null);
       return;
     }
-    let index = over.index + (target.zone === "after" ? 1 : 0);
-    // The dragged timeline leaves its place first.
-    if (dragged.parent === over.parent && dragged.index < index) index -= 1;
-    props.onReparent(drag.id, over.parent, index);
+    // The place among the children that stay.
+    const before = project.timelines.filter((t) => t.parent === over.parent && !ids.includes(t.id) && t.index < over.index).length;
+    props.onReparent(ids, over.parent, before + (target.zone === "after" ? 1 : 0));
   };
   const frames = Math.max(project.length + Math.ceil(project.tempo), MIN_FRAMES);
   const width = PADDING + frames * zoom;
@@ -197,7 +202,7 @@ export function Timeline(props: Props) {
       keys = selectedKeyframes.has(id) ? current : [key];
     }
     props.onSelectKeyframes(keys);
-    onSelect(key.timeline);
+    onSelect(key.timeline, event.shiftKey || event.ctrlKey ? "add" : "only");
     drag.current = { pointer: event.pointerId, startX: event.clientX, keys, offset: 0, clicked: key };
   };
 
@@ -288,7 +293,7 @@ export function Timeline(props: Props) {
           {rows.map(({ timeline, index }) => {
             const state = frame?.timelines[index];
             const classes = ["timeline-row"];
-            if (timeline.id === selected) classes.push("selected");
+            if (selection.includes(timeline.id)) classes.push("selected");
             if (timeline.hidden || state?.visible === false) classes.push("dimmed");
             if (dropTarget?.id === timeline.id) classes.push(`drop-${dropTarget.zone}`);
             return (
@@ -370,11 +375,11 @@ export function Timeline(props: Props) {
             {rows.map(({ timeline }) => (
               <div
                 key={timeline.id}
-                className={timeline.id === selected ? "track selected" : "track"}
+                className={selection.includes(timeline.id) ? "track selected" : "track"}
                 style={{ height: ROW_HEIGHT }}
-                onClick={() => {
-                  onSelect(timeline.id);
-                  props.onSelectKeyframes([]);
+                onClick={(e) => {
+                  onSelect(timeline.id, e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "range" : "only");
+                  if (!e.ctrlKey && !e.metaKey && !e.shiftKey) props.onSelectKeyframes([]);
                 }}
               >
                 {timeline.keyframes.map((position) => {

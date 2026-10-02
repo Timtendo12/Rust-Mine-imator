@@ -49,7 +49,7 @@ import {
 import { MenuBar, type Menu } from "./MenuBar";
 import { Properties } from "./Properties";
 import { StartScreen } from "./StartScreen";
-import { keyframeId, Timeline } from "./Timeline";
+import { keyframeId, Timeline, type SelectMode } from "./Timeline";
 import { Viewport } from "./Viewport";
 
 /** Whether keys typed now belong to a text field rather than to shortcuts. */
@@ -66,7 +66,10 @@ export function App() {
   const [values, setValues] = useState<ValueGroup[]>([]);
   const [tlSettings, setTlSettings] = useState<TimelineSettings | null>(null);
   const [marker, setMarker] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
+  // Selected timelines; the last one is the one the editors show.
+  const [selection, setSelectedIds] = useState<string[]>([]);
+  const selected = selection.length > 0 ? selection[selection.length - 1] : null;
+  const setSelected = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   const [selectedKeyframes, setSelectedKeyframes] = useState<KeyframeKey[]>([]);
   // How many keyframes were copied, and the frame under the mouse in the timeline.
   const [copied, setCopied] = useState(0);
@@ -136,8 +139,8 @@ export function App() {
   // The viewport outlines the selection.
   const hasProject = project !== null;
   useEffect(() => {
-    void setSelection(selected && hasProject ? [selected] : []);
-  }, [selected, hasProject]);
+    void setSelection(hasProject ? selection : []);
+  }, [selection, hasProject]);
 
   // Settings shown in the properties panel follow every change of the project.
   useEffect(() => {
@@ -201,13 +204,13 @@ export function App() {
 
   const editValues = useCallback(
     (values: ValueEdit[], mode: "set" | "add", merge: string | null) => {
-      if (!selected) return;
+      if (selection.length === 0) return;
       setPlaying(false);
       // Values are edited at a whole frame.
       setMarker((m) => Math.round(m));
-      void run(() => setTimelineValues([selected], selectedKeyframes, values, mode, merge));
+      void run(() => setTimelineValues(selection, selectedKeyframes, values, mode, merge));
     },
-    [run, selected, selectedKeyframes],
+    [run, selection, selectedKeyframes],
   );
 
   const moveSelected = useCallback(
@@ -228,15 +231,15 @@ export function App() {
     void run(() => removeKeyframes(keys));
   }, [run, selectedKeyframes]);
 
-  /** A keyframe at the marker for the selected timeline, if it has none there. */
+  /** A keyframe at the marker for the selected timelines that have none there. */
   const createKeyframe = useCallback(async () => {
-    if (!selected) return;
+    if (selection.length === 0) return;
     setPlaying(false);
     setMarker((m) => Math.round(m));
-    const result = await run(() => createKeyframes([selected]));
+    const result = await run(() => createKeyframes(selection));
     const keys = (result as (Edited & { keys: KeyframeKey[] }) | null)?.keys ?? [];
     if (keys.length > 0) setSelectedKeyframes(keys);
-  }, [run, selected]);
+  }, [run, selection]);
 
   const copySelectedKeyframes = useCallback(
     (cut: boolean) => {
@@ -253,21 +256,21 @@ export function App() {
   const paste = useCallback(async () => {
     if (copied === 0) return;
     const position = hoverFrame.current ?? Math.round(marker);
-    const result = await run(() => pasteKeyframes(position, selected ? [selected] : []));
+    const result = await run(() => pasteKeyframes(position, selection));
     const keys = (result as (Edited & { keys: KeyframeKey[] }) | null)?.keys ?? [];
     if (keys.length > 0) setSelectedKeyframes(keys);
-  }, [copied, marker, run, selected]);
+  }, [copied, marker, run, selection]);
 
-  /** Delete: the selected keyframes if there are any, else the selected timeline. */
+  /** Delete: the selected keyframes if there are any, else the selected timelines. */
   const deleteSelection = useCallback(() => {
     if (selectedKeyframes.length > 0) {
       deleteSelectedKeyframes();
-    } else if (selected) {
-      const id = selected;
-      setSelected(null);
-      void run(() => removeTimelines([id]));
+    } else if (selection.length > 0) {
+      const ids = selection;
+      setSelectedIds([]);
+      void run(() => removeTimelines(ids));
     }
-  }, [deleteSelectedKeyframes, run, selected, selectedKeyframes]);
+  }, [deleteSelectedKeyframes, run, selection, selectedKeyframes]);
 
   const create = useCallback(
     async (make: () => Promise<Edited & { created: string[] }>) => {
@@ -278,19 +281,42 @@ export function App() {
         setSelectedKeyframes([]);
       }
     },
-    [run],
+    [run, setSelected],
   );
 
   const duplicate = useCallback(async () => {
-    if (!selected) return;
-    const id = selected;
-    const result = await run(() => duplicateTimelines([id]));
+    if (selection.length === 0) return;
+    const ids = selection;
+    const result = await run(() => duplicateTimelines(ids));
     const created = (result as (Edited & { created: string[] }) | null)?.created ?? [];
     if (created.length > 0) {
-      setSelected(created[0]);
+      setSelectedIds(created);
       setSelectedKeyframes([]);
     }
-  }, [run, selected]);
+  }, [run, selection]);
+
+  /** Selects a timeline: alone, added to or taken out of the selection, or with all rows up to it. */
+  const select = useCallback(
+    (id: string, mode: SelectMode) => {
+      setSelectedIds((current) => {
+        if (mode === "toggle") return current.includes(id) ? current.filter((s) => s !== id) : [...current, id];
+        if (mode === "add") return [...current.filter((s) => s !== id), id];
+        const order = project?.timelines.map((t) => t.id) ?? [];
+        const from = order.indexOf(current[current.length - 1]);
+        const to = order.indexOf(id);
+        if (mode === "range" && from >= 0 && to >= 0) {
+          const range = from < to ? order.slice(from, to + 1) : order.slice(to, from + 1).reverse();
+          return [...current.filter((s) => !range.includes(s)), ...range];
+        }
+        return [id];
+      });
+    },
+    [project],
+  );
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(project?.timelines.map((t) => t.id) ?? []);
+  }, [project]);
 
   const doUndo = useCallback(() => {
     setSelectedKeyframes([]);
@@ -392,6 +418,9 @@ export function App() {
       } else if (ctrl && key === "n") {
         event.preventDefault();
         void startNew();
+      } else if (ctrl && key === "a") {
+        event.preventDefault();
+        selectAll();
       } else if (ctrl && key === "d") {
         event.preventDefault();
         void duplicate();
@@ -413,7 +442,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew, doExportImage, createKeyframe, copySelectedKeyframes, paste]);
+  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew, doExportImage, createKeyframe, copySelectedKeyframes, paste, selectAll]);
 
   if (!project) {
     return (
@@ -446,14 +475,14 @@ export function App() {
       items: [
         { label: project.undo ? `Undo ${project.undo.toLowerCase()}` : "Undo", action: project.undo ? doUndo : undefined, shortcut: "Ctrl+Z" },
         { label: project.redo ? `Redo ${project.redo.toLowerCase()}` : "Redo", action: project.redo ? doRedo : undefined, shortcut: "Ctrl+Y" },
-        { label: "Select all" },
+        { label: "Select all", action: selectAll, shortcut: "Ctrl+A" },
         { label: "Create keyframe", action: selected ? () => void createKeyframe() : undefined, shortcut: "Ctrl+Q" },
         { label: "Copy keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(false) : undefined, shortcut: "Ctrl+C" },
         { label: "Cut keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(true) : undefined, shortcut: "Ctrl+X" },
         { label: "Paste keyframes", action: copied > 0 ? () => void paste() : undefined, shortcut: "Ctrl+V" },
-        { label: "Duplicate timeline", action: selected ? () => void duplicate() : undefined, shortcut: "Ctrl+D" },
+        { label: selection.length > 1 ? "Duplicate timelines" : "Duplicate timeline", action: selected ? () => void duplicate() : undefined, shortcut: "Ctrl+D" },
         {
-          label: selectedKeyframes.length > 0 ? "Delete keyframes" : "Delete timeline",
+          label: selectedKeyframes.length > 0 ? "Delete keyframes" : selection.length > 1 ? "Delete timelines" : "Delete timeline",
           action: selectedKeyframes.length > 0 || selected ? deleteSelection : undefined,
           shortcut: "Delete",
         },
@@ -487,7 +516,7 @@ export function App() {
             onEditDone={() => void finishEdit()}
             onPick={(id, keepSelection) => {
               if (id) {
-                setSelected(id);
+                select(id, keepSelection ? "toggle" : "only");
                 setSelectedKeyframes([]);
               } else if (!keepSelection) {
                 setSelected(null);
@@ -498,12 +527,12 @@ export function App() {
             project={project}
             frame={frame}
             marker={marker}
-            selected={selected}
+            selection={selection}
             selectedKeyframes={new Set(selectedKeyframes.map(keyframeId))}
             playing={playing}
             onSeek={seek}
             onHoverFrame={(f) => (hoverFrame.current = f)}
-            onSelect={setSelected}
+            onSelect={select}
             onSelectKeyframes={setSelectedKeyframes}
             onMoveKeyframes={(keys, offset) => void moveSelected(keys, offset)}
             onMoveDone={() => void finishEdit()}
@@ -513,7 +542,7 @@ export function App() {
             onCreateModel={(name) => void create(() => createModel(name))}
             onCreateBlock={(name) => void create(() => createBlock(name))}
             onCreateItem={(name) => void create(() => createItem(name))}
-            onReparent={(id, parent, index) => void run(() => reparentTimelines([id], parent, index))}
+            onReparent={(ids, parent, index) => void run(() => reparentTimelines(ids, parent, index))}
             onPlay={setPlaying}
           />
         </div>
@@ -525,7 +554,7 @@ export function App() {
           values={values}
           timelineSettings={tlSettings}
           onSetTimelineSetting={(group, key, value) =>
-            selected && void run(() => setTimelineSetting([selected], group, key, value))
+            selection.length > 0 && void run(() => setTimelineSetting(selection, group, key, value))
           }
           onSetSetting={(group, key, value, merge) => void run(() => setSetting(group, key, value, merge))}
           onSetInfo={(field, value) => void run(() => setProjectInfo(field, value))}

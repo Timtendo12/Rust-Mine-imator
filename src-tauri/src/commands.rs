@@ -483,6 +483,8 @@ pub fn viewport_pick(
     selected: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, CommandError> {
+    // Clicks go through what is selected already, to what is behind it.
+    let selection = state.selection();
     let exclude: Vec<usize> = {
         let guard = state.project();
         let project = guard.as_ref().ok_or(CommandError::NoProject)?;
@@ -490,7 +492,7 @@ pub fn viewport_pick(
             .timelines()
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.lock || selected.as_deref() == Some(t.id.as_str()))
+            .filter(|(_, t)| t.lock || selected.as_deref() == Some(t.id.as_str()) || selection.contains(&t.id))
             .map(|(i, _)| i)
             .collect()
     };
