@@ -121,7 +121,7 @@ samples are in, and the frame goes to FFmpeg (mp4, mov, wmv with x264 and mixed 
 | `mi-assets` | planned | Minecraft asset pack, block and character models, atlases, resource packs, NBT, schematics, scenery mesher |
 | `mi-world` | planned | World saves: `level.dat`, regions, chunks of every supported version, preview mesh |
 | `mi-particles` | planned | Deterministic particle simulation |
-| `mi-render` | planned | wgpu renderer: low and high quality pipelines, post effects, picking, overlays |
+| `mi-render` | exists (low quality mode) | wgpu renderer: low and high quality pipelines, post effects, picking, overlays |
 | `mi-audio` | planned | Decoding, playback, waveforms, mixdown for export |
 | `mi-export` | planned | Image, image sequence and video export |
 | `src-tauri` | exists (shell) | Application state, commands and events, windows, dialogs |
@@ -141,6 +141,13 @@ The wgpu renderer draws straight to the surface of the OS window; the webview on
 where the viewports are. The frontend reports the viewport rectangles and forwards pointer input in
 them; camera control, picking and gizmo dragging happen in Rust. Popped-out views are additional
 windows with their own surface.
+
+Concretely (`src-tauri/src/viewport.rs`): the window is created transparent, a wgpu surface is made
+from its handle, and a render thread redraws whenever the view state changes (frame, camera, mode,
+rectangle, window size). The thread builds a `RenderScene` from the project through
+`scene_builder.rs`, the one module that knows both the project model and the renderer. In the page,
+every panel is opaque and laid out without gaps, so the only see-through area is the viewport
+element.
 
 ### Format layer design (`mi-format`)
 

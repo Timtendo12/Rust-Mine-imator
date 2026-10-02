@@ -11,6 +11,7 @@ import {
   type Vec3,
 } from "./backend";
 import { Timeline } from "./Timeline";
+import { Viewport } from "./Viewport";
 
 function formatTime(frame: number, tempo: number): string {
   if (tempo <= 0) return "0:00.00";
@@ -223,7 +224,9 @@ export function App() {
             )}
           </aside>
 
-          <section className="panel timeline-panel">
+          <div className="stage">
+            <Viewport />
+            <section className="panel timeline-panel">
             {project.timelines.length === 0 ? (
               <p className="muted">This project has no timelines.</p>
             ) : (
@@ -237,7 +240,8 @@ export function App() {
                 onSelect={setSelected}
               />
             )}
-          </section>
+            </section>
+          </div>
         </main>
       )}
     </div>

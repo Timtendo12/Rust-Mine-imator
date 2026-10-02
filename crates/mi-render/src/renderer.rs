@@ -337,6 +337,11 @@ impl Renderer {
         TextureId(self.textures.len() - 1)
     }
 
+    /// Submits work recorded on the renderer's device.
+    pub fn submit(&self, encoder: wgpu::CommandEncoder) {
+        self.queue.submit([encoder.finish()]);
+    }
+
     /// Creates a depth buffer for a target of the given size.
     pub fn create_depth_view(&self, width: u32, height: u32) -> wgpu::TextureView {
         self.device

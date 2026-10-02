@@ -24,8 +24,10 @@ body,
   margin: 0;
 }
 
+/* The page itself is transparent: the 3D scene is drawn behind the webview
+   and shows through wherever nothing opaque is on top. */
 body {
-  background: var(--background);
+  background: transparent;
   color: var(--text);
   user-select: none;
   overflow: hidden;
@@ -92,15 +94,15 @@ button:disabled {
 }
 
 .error {
-  margin: 10px 12px 0;
   padding: 8px 12px;
-  border: 1px solid var(--error);
-  border-radius: 4px;
+  border-bottom: 1px solid var(--error);
+  background: var(--background);
   color: var(--error);
   user-select: text;
 }
 
 .empty {
+  background: var(--background);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -110,20 +112,74 @@ button:disabled {
   padding: 24px;
 }
 
+/* No gaps or padding here: space between panels is made of opaque borders
+   so that only the viewport lets the scene through. */
 .workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: 310px minmax(0, 1fr);
 }
 
 .panel {
   min-height: 0;
   background: var(--panel);
+  border: 5px solid var(--background);
+  outline: 1px solid var(--border);
+  outline-offset: -5px;
+}
+
+.stage {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 3fr) minmax(120px, 2fr);
+}
+
+.viewport-cell {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 5px solid var(--background);
+  border-bottom: 0;
+}
+
+.viewport-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  background: var(--raised);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.viewport-bar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+select {
+  padding: 3px 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.viewport {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.viewport:active {
+  cursor: grabbing;
 }
 
 .side {
@@ -322,6 +378,10 @@ dd {
   .workspace {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .viewport-bar .muted {
+    display: none;
   }
 
   .side {

@@ -16,9 +16,11 @@
         "width": 1280,
         "height": 800,
         "minWidth": 800,
-        "minHeight": 500
+        "minHeight": 500,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost"
     }

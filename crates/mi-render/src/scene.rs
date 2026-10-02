@@ -10,6 +10,14 @@ use crate::environment::{Lighting, Rgb};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MeshId(pub(crate) usize);
 
+impl MeshId {
+    /// An id that does not come from a renderer, for describing scenes that
+    /// are only inspected (for example in tests).
+    pub fn from_raw(index: usize) -> Self {
+        Self(index)
+    }
+}
+
 /// Handle of a texture uploaded to the renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TextureId(pub(crate) usize);

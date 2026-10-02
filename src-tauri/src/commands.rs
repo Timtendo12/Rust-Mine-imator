@@ -1,5 +1,6 @@
 //! Commands callable from the frontend.
 
+use crate::scene_builder::{saved_work_camera, ViewMode};
 use crate::state::AppState;
 use mi_core::{version, TlType};
 use mi_project::{Project, ProjectContext, ProjectError};
@@ -131,7 +132,13 @@ pub fn startup_project(state: State<'_, AppState>) -> Option<String> {
 pub fn open_project(path: String, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
     let (project, warnings) = Project::open(Path::new(&path), ProjectContext::default())?;
     let summary = summarize(&project, warnings);
+    let work_camera = saved_work_camera(&project);
+    let marker = summary.marker.min(summary.length as f64);
     *state.project() = Some(project);
+    state.update_view(|view| {
+        view.marker = marker;
+        view.work_camera = work_camera;
+    });
     Ok(summary)
 }
 
@@ -185,12 +192,66 @@ fn frame_state(project: &Project, marker: f64) -> FrameState {
     FrameState { marker, timelines, active_camera }
 }
 
-/// Evaluates the open project at a frame.
+/// Moves to a frame: evaluates the open project there and shows it in the
+/// viewport.
 #[tauri::command]
 pub fn evaluate_frame(marker: f64, state: State<'_, AppState>) -> Result<FrameState, CommandError> {
-    let guard = state.project();
-    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
-    Ok(frame_state(project, marker))
+    let frame = {
+        let guard = state.project();
+        let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+        frame_state(project, marker)
+    };
+    state.update_view(|view| view.marker = marker);
+    Ok(frame)
+}
+
+/// Tells the backend where on the window the viewport element is, in
+/// physical pixels. A size of zero hides the scene.
+#[tauri::command]
+pub fn set_viewport_rect(x: f64, y: f64, width: f64, height: f64, state: State<'_, AppState>) {
+    let pixels = |v: f64| v.round().clamp(0.0, 65_535.0) as u32;
+    let rect = mi_render::Viewport { x: pixels(x), y: pixels(y), width: pixels(width), height: pixels(height) };
+    state.update_view(|view| view.rect = Some(rect));
+}
+
+/// A mouse drag in the viewport, in pixels.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CameraDrag {
+    Orbit,
+    Pan,
+}
+
+/// Moves the work camera by a mouse drag.
+#[tauri::command]
+pub fn viewport_drag(kind: CameraDrag, dx: f64, dy: f64, state: State<'_, AppState>) {
+    state.update_view(|view| match kind {
+        CameraDrag::Orbit => view.work_camera.orbit(dx as f32, dy as f32),
+        CameraDrag::Pan => view.work_camera.pan(dx as f32, dy as f32, 1.0),
+    });
+}
+
+/// Zooms the work camera by mouse wheel steps; positive moves away.
+#[tauri::command]
+pub fn viewport_zoom(steps: f64, state: State<'_, AppState>) {
+    let far = state.project().as_ref().map_or(30000.0, |p| p.file().render.distance as f32);
+    state.update_view(|view| view.work_camera.zoom_by(steps as f32, far));
+}
+
+/// Puts the work camera back where the project was saved with it.
+#[tauri::command]
+pub fn viewport_reset_camera(state: State<'_, AppState>) {
+    let camera = state.project().as_ref().map(saved_work_camera).unwrap_or_default();
+    state.update_view(|view| view.work_camera = camera);
+}
+
+/// Sets how the viewport shows the scene and through which camera.
+#[tauri::command]
+pub fn set_view_options(mode: ViewMode, timeline_camera: bool, state: State<'_, AppState>) {
+    state.update_view(|view| {
+        view.mode = mode;
+        view.use_timeline_camera = timeline_camera;
+    });
 }
 
 #[cfg(test)]

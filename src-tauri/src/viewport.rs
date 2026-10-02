@@ -1,0 +1,263 @@
+//! The 3D viewport: a wgpu surface on the application window, underneath
+//! the webview. The webview is transparent where the frontend places its
+//! viewport element, so the scene shows through there.
+//!
+//! Rendering happens on its own thread, which redraws when asked to.
+
+use crate::scene_builder::{build_scene, MeshKey, ViewCamera, ViewMode};
+use crate::state::AppState;
+use mi_render::{ground_mesh, shape_mesh, wgpu, GpuError, MeshId, Renderer, Viewport, WorkCamera};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
+use tauri::{Manager, WebviewWindow};
+
+/// What a viewport shows; kept in the application state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewState {
+    /// Frame the scene is shown at.
+    pub marker: f64,
+    pub work_camera: WorkCamera,
+    /// Look through the active camera timeline instead of the work camera.
+    pub use_timeline_camera: bool,
+    pub mode: ViewMode,
+    /// Where on the window the viewport is, in physical pixels.
+    pub rect: Option<Viewport>,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            marker: 0.0,
+            work_camera: WorkCamera::default(),
+            use_timeline_camera: false,
+            mode: ViewMode::Shaded,
+            rect: None,
+        }
+    }
+}
+
+enum Message {
+    Redraw,
+    Resize(u32, u32),
+}
+
+/// Handle for asking the render thread to do something. Cheap to clone.
+#[derive(Clone)]
+pub struct ViewportHandle {
+    sender: Sender<Message>,
+}
+
+impl ViewportHandle {
+    /// Asks for the scene to be drawn again. Requests made while a frame is
+    /// being drawn are merged into one.
+    pub fn redraw(&self) {
+        // The render thread only goes away when the application exits.
+        let _ = self.sender.send(Message::Redraw);
+    }
+
+    pub fn resize(&self, width: u32, height: u32) {
+        let _ = self.sender.send(Message::Resize(width, height));
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ViewportError {
+    #[error("could not create a drawing surface on the window: {0}")]
+    Surface(#[from] wgpu::CreateSurfaceError),
+    #[error(transparent)]
+    Gpu(#[from] GpuError),
+    #[error("the window surface supports no usable format")]
+    NoFormat,
+    #[error("could not read the window size: {0}")]
+    Window(#[from] tauri::Error),
+}
+
+struct Meshes {
+    shapes: Vec<(MeshKey, MeshId)>,
+}
+
+impl Meshes {
+    /// Returns the uploaded mesh for a key, building it on first use.
+    fn resolve(&mut self, renderer: &mut Renderer, key: MeshKey) -> MeshId {
+        if let Some((_, id)) = self.shapes.iter().find(|(k, _)| *k == key) {
+            return *id;
+        }
+        let data = match key {
+            MeshKey::Shape(shape, settings) => shape_mesh(shape, &settings),
+            MeshKey::Ground(render_distance) => ground_mesh(render_distance),
+        };
+        let id = renderer.add_mesh(&data);
+        self.shapes.push((key, id));
+        id
+    }
+}
+
+struct RenderThread {
+    window: WebviewWindow,
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    config: wgpu::SurfaceConfiguration,
+    renderer: Renderer,
+    depth: wgpu::TextureView,
+    meshes: Meshes,
+}
+
+impl RenderThread {
+    fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 || (width == self.config.width && height == self.config.height) {
+            return;
+        }
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
+        self.depth = self.renderer.create_depth_view(width, height);
+    }
+
+    fn draw(&mut self) {
+        let frame = match self.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                self.surface.configure(&self.device, &self.config);
+                match self.surface.get_current_texture() {
+                    Ok(frame) => frame,
+                    Err(error) => return eprintln!("viewport: no frame after reconfiguring: {error}"),
+                }
+            }
+            // A timeout or a minimised window: try again on the next redraw.
+            Err(error) => return eprintln!("viewport: {error}"),
+        };
+        let color = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let state = self.window.state::<AppState>();
+        let view = state.view();
+        let full = Viewport { x: 0, y: 0, width: self.config.width, height: self.config.height };
+        let rect = view.rect.map(|r| clamp_rect(r, full)).unwrap_or(full);
+
+        let scene = {
+            let guard = state.project();
+            guard.as_ref().map(|project| {
+                let camera = if view.use_timeline_camera {
+                    ViewCamera::Active(view.work_camera)
+                } else {
+                    ViewCamera::Work(view.work_camera)
+                };
+                let (renderer, meshes) = (&mut self.renderer, &mut self.meshes);
+                build_scene(project, view.marker, camera, view.mode, &mut |key| meshes.resolve(renderer, key))
+            })
+        };
+
+        match scene {
+            Some(scene) => self.renderer.render(&color, &self.depth, rect, &scene, true),
+            None => self.clear(&color),
+        }
+        frame.present();
+    }
+
+    /// Fills the target with the interface background while no project is
+    /// open.
+    fn clear(&self, color: &wgpu::TextureView) {
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("clear") });
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.118, g: 0.122, b: 0.133, a: 1.0 }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        self.renderer.submit(encoder);
+    }
+
+    fn run(mut self, receiver: Receiver<Message>) {
+        while let Ok(first) = receiver.recv() {
+            // Handle everything that queued up, then draw once.
+            let mut redraw = false;
+            for message in std::iter::once(first).chain(receiver.try_iter()) {
+                match message {
+                    Message::Redraw => redraw = true,
+                    Message::Resize(width, height) => {
+                        self.resize(width, height);
+                        redraw = true;
+                    }
+                }
+            }
+            if redraw {
+                self.draw();
+            }
+        }
+    }
+}
+
+/// Limits a rectangle to the target.
+fn clamp_rect(rect: Viewport, target: Viewport) -> Viewport {
+    let x = rect.x.min(target.width);
+    let y = rect.y.min(target.height);
+    Viewport { x, y, width: rect.width.min(target.width - x), height: rect.height.min(target.height - y) }
+}
+
+/// Creates the surface on `window` and starts the render thread.
+pub fn start(window: WebviewWindow) -> Result<ViewportHandle, ViewportError> {
+    let size = window.inner_size()?;
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let surface = instance.create_surface(Arc::new(window.clone()))?;
+    let (adapter, device, queue) = pollster::block_on(mi_render::request_device(&instance, Some(&surface)))?;
+
+    let capabilities = surface.get_capabilities(&adapter);
+    // The renderer does its own gamma, so the surface must not convert.
+    let format = capabilities
+        .formats
+        .iter()
+        .copied()
+        .find(|f| !f.is_srgb())
+        .or(capabilities.formats.first().copied())
+        .ok_or(ViewportError::NoFormat)?;
+    let alpha_mode = capabilities.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto);
+    let config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format,
+        width: size.width.max(1),
+        height: size.height.max(1),
+        present_mode: wgpu::PresentMode::Fifo,
+        alpha_mode,
+        view_formats: Vec::new(),
+        desired_maximum_frame_latency: 2,
+    };
+    surface.configure(&device, &config);
+
+    let renderer = Renderer::new(&device, &queue, format);
+    let depth = renderer.create_depth_view(config.width, config.height);
+    let thread = RenderThread { window, surface, device, config, renderer, depth, meshes: Meshes { shapes: Vec::new() } };
+
+    let (sender, receiver) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("viewport".to_owned())
+        .spawn(move || thread.run(receiver))
+        .expect("the operating system can start a thread");
+
+    let handle = ViewportHandle { sender };
+    handle.redraw();
+    Ok(handle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rectangles_are_kept_inside_the_target() {
+        let target = Viewport { x: 0, y: 0, width: 800, height: 600 };
+        let inside = Viewport { x: 100, y: 50, width: 300, height: 200 };
+        assert_eq!(clamp_rect(inside, target), inside);
+        let overhanging = Viewport { x: 700, y: 500, width: 300, height: 300 };
+        assert_eq!(clamp_rect(overhanging, target), Viewport { x: 700, y: 500, width: 100, height: 100 });
+        let outside = Viewport { x: 900, y: 900, width: 10, height: 10 };
+        assert_eq!(clamp_rect(outside, target), Viewport { x: 800, y: 600, width: 0, height: 0 });
+    }
+}

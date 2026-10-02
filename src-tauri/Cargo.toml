@@ -15,8 +15,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 mi-core = { workspace = true }
 mi-format = { workspace = true }
+glam = "0.30"
 mi-project = { workspace = true }
+mi-render = { workspace = true }
+pollster = "0.4"
 serde = { workspace = true }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 thiserror = { workspace = true }

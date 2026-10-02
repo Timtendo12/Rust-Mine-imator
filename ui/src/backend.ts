@@ -70,3 +70,20 @@ export const startupProject = () => invoke<string | null>("startup_project");
 export const openProject = (path: string) => invoke<ProjectSummary>("open_project", { path });
 
 export const evaluateFrame = (marker: number) => invoke<FrameState>("evaluate_frame", { marker });
+
+export type ViewMode = "flat" | "shaded";
+
+/** Where the viewport element is on the window, in physical pixels. */
+export const setViewportRect = (x: number, y: number, width: number, height: number) =>
+  invoke<void>("set_viewport_rect", { x, y, width, height });
+
+export const viewportDrag = (kind: "orbit" | "pan", dx: number, dy: number) =>
+  invoke<void>("viewport_drag", { kind, dx, dy });
+
+/** Positive steps move the camera away. */
+export const viewportZoom = (steps: number) => invoke<void>("viewport_zoom", { steps });
+
+export const viewportResetCamera = () => invoke<void>("viewport_reset_camera");
+
+export const setViewOptions = (mode: ViewMode, timelineCamera: boolean) =>
+  invoke<void>("set_view_options", { mode, timelineCamera });

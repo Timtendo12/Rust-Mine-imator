@@ -151,7 +151,7 @@ mod tests {
         assert!(at(180.0).sun_direction().z < -0.999);
         // The default time is mid-morning or mid-afternoon: 45 degrees up.
         let default = SkySettings::default().sun_direction();
-        assert!((default.z - 0.7071).abs() < 1e-3, "{default:?}");
+        assert!((default.z - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3, "{default:?}");
         assert!((default.length() - 1.0).abs() < 1e-5);
     }
 

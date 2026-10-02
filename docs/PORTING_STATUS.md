@@ -13,7 +13,7 @@ Legend: **done** · **partial** · **not started**
 | 1 | Core tables and file formats | partial (see below) |
 | 2 | Animation: value evaluation, easing, hierarchy, matrices, bend, IK, paths | partial (see below) |
 | 3 | Assets: Minecraft pack, block and character models, atlases, schematics | not started |
-| 4 | Renderer (low quality) and viewport | not started |
+| 4 | Renderer (low quality) and viewport | partial (see below) |
 | 5 | Editor shell: docking, timeline, editors, workbench, undo | not started |
 | 6 | Renderer (high quality) and post effects | not started |
 | 7 | Particles, audio, export | not started |
@@ -100,12 +100,21 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status |
 |---|---|
-| wgpu device, surface under the webview, multiple windows | not started |
-| Low quality mode (flat, shaded) | not started |
-| Sky, sun and moon, clouds, ground, fog | not started |
-| Models, blocks, scenery, items, text, shapes, paths, particles | not started |
+| wgpu device and surface under the transparent webview | done (one window; pop-out windows not yet) |
+| Low quality mode (flat, shaded): per-vertex sun and point lights, ambient, fog, tonemapping, colour transforms, alpha blending | done |
+| Wind, material maps, glint, alpha hashing, alpha-fix pass in the low quality shader | not started |
+| Shapes (cube, cone, cylinder, sphere, surface) with texture mapping options | done (untextured until assets load) |
+| Sun direction, day/night and twilight colours | done |
+| Sky background image, sun and moon discs, stars, clouds | not started |
+| Ground | partial: drawn in the grass colour; texture needs the Minecraft assets |
+| Models, blocks, scenery, items, text, paths, particles | not started |
+| Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | not started |
-| Work camera (orbit, pan, fly) and timeline cameras | not started |
+| Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
+| Work camera: fly mode (right drag + keys) | not started |
+| Timeline cameras (active camera view, FOV, orbit) | done |
+| Camera shake | not started |
+| Offscreen rendering with pixel readback | done (used by tests; export will build on it) |
 | High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | not started |
 | Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | not started |
 | Tonemapping, alpha modes, material formats | not started |
@@ -128,7 +137,7 @@ Legend: **done** · **partial** · **not started**
 | Application window, start page | partial | Opens a project (dialog, or path argument / double-click), shows project info |
 | Timeline (read-only) | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, values of the selected timeline at the current frame. No editing, markers, regions or audio. |
 | Docking panels, pop-out windows | not started | |
-| Viewports and view toolbar | not started | |
+| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | not started | |
 | Properties tabs (project, render, library, background, resources) | not started | |
 | Template editor, timeline editor, frame editor | not started | |

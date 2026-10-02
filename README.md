@@ -12,8 +12,11 @@ projects and assets working.
   `.mirender` (JSON formats 24–34), verified against the files bundled with the original.
 - `mi-anim`: easing, keyframe interpolation, the transform hierarchy, paths and inverse kinematics.
 - `mi-project`: an open project with its timeline tree, open/save and scene evaluation.
-- A Tauri application that opens a project and shows its timelines, keyframes and the animated
-  values at any frame, with playback. There is no 3D viewport and no editing yet.
+- `mi-render`: a wgpu renderer for the flat and shaded viewport modes (shapes, ground, sun and
+  point lights, fog).
+- A Tauri application that opens a project and shows it in a 3D viewport with an orbiting camera,
+  next to its timelines and keyframes, with scrubbing and playback. Only shapes are drawn so far
+  (characters, blocks and items need the Minecraft asset pipeline) and there is no editing yet.
 
 [docs/PORTING_STATUS.md](docs/PORTING_STATUS.md) tracks every system of the original and whether it
 has been ported.
