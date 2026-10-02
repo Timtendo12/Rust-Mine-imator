@@ -155,11 +155,30 @@ export interface KeyframeKey {
   position: number;
 }
 
-/** A number value by its name in project files, such as `POS_X`. */
-export interface NumberEdit {
+/** A value by its name in project files, such as `POS_X`: number, boolean, `#RRGGBB` or text. */
+export interface ValueEdit {
   name: string;
-  value: number;
+  value: unknown;
 }
+
+/** A value of the frame editor and how it is edited. */
+export interface ValueEntry {
+  name: string;
+  label: string;
+  kind: "number" | "bool" | "color" | "choice" | "text";
+  value: unknown;
+  /** Change per pixel when dragging a number. */
+  step: number;
+  options: string[];
+}
+
+export interface ValueGroup {
+  title: string;
+  values: ValueEntry[];
+}
+
+/** The frame editor of a timeline at the current frame. */
+export const timelineValues = (id: string) => invoke<ValueGroup[]>("timeline_values", { id });
 
 /**
  * Changes values of timelines at the current frame, adding a keyframe there
@@ -167,7 +186,7 @@ export interface NumberEdit {
  * each starts from the values before the first, so a drag sends its total
  * offset with mode "add".
  */
-export const setTimelineValues = (timelines: string[], values: NumberEdit[], mode: "set" | "add", merge: string | null = null) =>
+export const setTimelineValues = (timelines: string[], values: ValueEdit[], mode: "set" | "add", merge: string | null = null) =>
   invoke<Edited>("set_timeline_values", { timelines, values, mode, merge });
 
 /** Ends a drag, so the next edit is an undo step of its own. */

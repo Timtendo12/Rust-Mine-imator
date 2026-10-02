@@ -1,5 +1,8 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
-import type { FrameState, NumberEdit, ProjectSummary, Settings, Vec3 } from "./backend";
+import type { FrameState, ProjectSummary, Settings, ValueEdit, ValueEntry, ValueGroup, Vec3 } from "./backend";
+
+/** Groups of the frame editor that start opened. */
+const OPEN_GROUPS = new Set(["Position", "Rotation", "Scale", "Bend", "Color", "Light", "Camera", "Keyframe"]);
 
 const formatNumber = (value: number) => (Math.round(value * 1000) / 1000).toString();
 const formatVec = (value: Vec3) => value.map(formatNumber).join(", ");
@@ -163,18 +166,19 @@ interface Props {
   onSetSetting: (group: "background" | "render", key: string, value: unknown, merge: string | null) => void;
   onSetInfo: (field: "name" | "author" | "description" | "tempo" | "video_size", value: unknown) => void;
   /** Changes values of the selected timeline at the current frame. */
-  onEditValues: (values: NumberEdit[], mode: "set" | "add", merge: string | null) => void;
+  /** The frame editor of the selected timeline. */
+  values: ValueGroup[];
+  onEditValues: (values: ValueEdit[], mode: "set" | "add", merge: string | null) => void;
   onEditDone: () => void;
 }
 
-/** Value names of the three axes of a vector in project files. */
-const AXES = ["X", "Y", "Z"] as const;
-
 /** The properties panel on the right. */
 export function Properties(props: Props) {
-  const { project, frame, selected, settings, onEditValues, onEditDone, onSetSetting, onSetInfo } = props;
+  const { project, frame, selected, settings, values, onEditValues, onEditDone, onSetSetting, onSetInfo } = props;
   const [open, setOpen] = useState<Record<string, boolean>>({ project: true, selection: true });
   const toggle = (key: string) => setOpen((current) => ({ ...current, [key]: !current[key] }));
+  // Which groups of the frame editor are open; kept while values refresh.
+  const [openGroups, setOpenGroups] = useState(OPEN_GROUPS);
 
   const index = selected ? project.timelines.findIndex((t) => t.id === selected) : -1;
   const timeline = index >= 0 ? project.timelines[index] : null;
@@ -329,48 +333,92 @@ export function Properties(props: Props) {
             <>
               <Field label="Name">{timeline.name || "(unnamed)"}</Field>
               <Field label="Type">{timeline.kind}</Field>
-              {(
-                [
-                  ["Position", "POS", state.position, 0.5],
-                  ["Rotation", "ROT", state.rotation, 0.5],
-                  ["Scale", "SCA", state.scale, 0.01],
-                ] as const
-              ).map(([title, prefix, vector, step]) => (
-                <Field key={prefix} label={title}>
-                  <div className="vector-input">
-                    {AXES.map((axis, i) => {
-                      const name = `${prefix}_${axis}`;
-                      return (
-                        <NumberInput
-                          key={axis}
-                          label={axis}
-                          value={vector[i]}
-                          step={step}
-                          onSet={(value) => onEditValues([{ name, value }], "set", null)}
-                          onDrag={(offset) => onEditValues([{ name, value: offset }], "add", `drag:${name}`)}
-                          onDragEnd={onEditDone}
-                        />
-                      );
-                    })}
-                  </div>
-                </Field>
-              ))}
               <Field label="Position in the world">{formatVec(state.worldPosition)}</Field>
-              <Field label="Visible">
+              <Field label="Visible in the scene">
                 {state.visible ? "Yes" : "No"}
                 {state.alpha !== state.alphaValue && ` (alpha with parents ${formatNumber(state.alpha)})`}
               </Field>
-              <Field label="Alpha">
-                <NumberInput
-                  label="α"
-                  value={state.alphaValue}
-                  step={0.005}
-                  onSet={(value) => onEditValues([{ name: "ALPHA", value }], "set", null)}
-                  onDrag={(offset) => onEditValues([{ name: "ALPHA", value: offset }], "add", "drag:ALPHA")}
-                  onDragEnd={onEditDone}
-                />
-              </Field>
-              <Field label="Transition">{state.transition}</Field>
+              {values.map((group) => {
+                const numbers = group.values.every((v) => v.kind === "number");
+                const vector = numbers && group.values.length === 3 && group.values.every((v) => v.label.length === 1);
+                const control = (entry: ValueEntry, handle: string) => {
+                  const set = (value: unknown) => onEditValues([{ name: entry.name, value }], "set", null);
+                  switch (entry.kind) {
+                    case "number":
+                      return (
+                        <NumberInput
+                          label={handle}
+                          value={entry.value as number}
+                          step={entry.step}
+                          onSet={set}
+                          onDrag={(offset) => onEditValues([{ name: entry.name, value: offset }], "add", `drag:${entry.name}`)}
+                          onDragEnd={onEditDone}
+                        />
+                      );
+                    case "bool":
+                      return <Toggle label={entry.label} on={entry.value === true} onChange={set} />;
+                    case "color":
+                      return (
+                        <Swatch
+                          label={entry.label}
+                          color={entry.value as string}
+                          onPick={(color) => onEditValues([{ name: entry.name, value: color }], "set", `color:${entry.name}`)}
+                        />
+                      );
+                    case "choice":
+                      return (
+                        <select className="text-input" value={entry.value as string} onChange={(e) => set(e.target.value)}>
+                          {entry.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    default:
+                      return <TextInput multiline value={entry.value as string} onCommit={set} />;
+                  }
+                };
+                return (
+                  <details
+                    key={group.title}
+                    className="value-group"
+                    open={openGroups.has(group.title)}
+                    onToggle={(e) => {
+                      const isOpen = e.currentTarget.open;
+                      setOpenGroups((current) => {
+                        if (current.has(group.title) === isOpen) return current;
+                        const next = new Set(current);
+                        if (isOpen) next.add(group.title);
+                        else next.delete(group.title);
+                        return next;
+                      });
+                    }}
+                  >
+                    <summary>{group.title}</summary>
+                    {vector ? (
+                      <div className="vector-input">
+                        {group.values.map((entry) => (
+                          <div key={entry.name}>{control(entry, entry.label)}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      group.values.map((entry) =>
+                        entry.kind === "bool" || entry.kind === "color" ? (
+                          <div key={entry.name} className="value-row">
+                            {control(entry, "")}
+                          </div>
+                        ) : (
+                          <div key={entry.name} className="value-row labelled">
+                            <span className="field-label">{entry.label}</span>
+                            {control(entry, "\u2194")}
+                          </div>
+                        ),
+                      )
+                    )}
+                  </details>
+                );
+              })}
               <Field label="Keyframes">{timeline.keyframes.length}</Field>
             </>
           ) : (

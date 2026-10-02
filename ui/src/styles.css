@@ -925,3 +925,42 @@ input.swatch-color {
 .swatch {
   cursor: pointer;
 }
+
+/* Frame editor */
+
+.value-group {
+  margin: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.value-group > summary {
+  padding: 5px 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+
+.value-group[open] > summary {
+  color: var(--accent);
+}
+
+.value-row {
+  margin: 3px 0;
+}
+
+.value-row.labelled {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 6px;
+}
+
+.value-row.labelled .field-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

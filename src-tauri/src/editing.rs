@@ -30,11 +30,12 @@ impl From<&KeyframeKey> for KeyframeRef {
     }
 }
 
-/// A number value to set, by its name in project files (`POS_X`, ...).
+/// A value to set, by its name in project files (`POS_X`, ...): a number,
+/// boolean, `#RRGGBB` colour or text, as the value's kind needs.
 #[derive(Debug, Deserialize)]
-pub struct NumberEdit {
+pub struct ValueEdit {
     name: String,
-    value: f64,
+    value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -68,19 +69,24 @@ fn ids(list: &[String]) -> Vec<SaveId> {
     list.iter().map(SaveId::new).collect()
 }
 
-/// Changes number values of timelines at the current frame. Edits with the
-/// same `merge` key in a row are one undo step (a drag).
+/// Changes values of timelines at the current frame. Edits with the same
+/// `merge` key in a row are one undo step (a drag).
 #[tauri::command]
 pub fn set_timeline_values(
     timelines: Vec<String>,
-    values: Vec<NumberEdit>,
+    values: Vec<ValueEdit>,
     mode: EditMode,
     merge: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Edited, CommandError> {
     let marker = state.view().marker.round() as i64;
-    let values: Vec<(ValueId, Value)> =
-        values.iter().filter_map(|v| Some((ValueId::from_name(&v.name)?, Value::Number(v.value)))).collect();
+    let values: Vec<(ValueId, Value)> = values
+        .iter()
+        .filter_map(|v| {
+            let id = ValueId::from_name(&v.name)?;
+            Some((id, crate::frame_editor::parse_value(id, &v.value)?))
+        })
+        .collect();
     let mode = match mode {
         EditMode::Set => ValueChange::Set,
         EditMode::Add => ValueChange::Add,
@@ -372,4 +378,18 @@ pub fn new_project(state: State<'_, AppState>) -> ProjectSummary {
         view.work_camera = work_camera;
     });
     summary
+}
+
+/// The frame editor of a timeline: its values at the current frame, in
+/// groups.
+#[tauri::command]
+pub fn timeline_values(id: String, state: State<'_, AppState>) -> Result<Vec<crate::frame_editor::ValueGroup>, CommandError> {
+    let marker = state.view().marker;
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    let Some(index) = project.timeline_index(&SaveId::new(&id)) else { return Ok(Vec::new()) };
+    let has_bend = state.bindings().as_ref().and_then(|b| b.part_info(index)).is_some_and(|part| part.bend.is_some());
+    let (scene, order) = project.evaluate(marker);
+    let Some(node) = order.iter().position(|&i| i == index) else { return Ok(Vec::new()) };
+    Ok(crate::frame_editor::value_groups(project.timelines()[index].kind, has_bend, &scene.nodes[node].values))
 }

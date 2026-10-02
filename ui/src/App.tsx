@@ -26,13 +26,15 @@ import {
   setTimelinesHidden,
   setTimelineValues,
   startupProject,
+  timelineValues,
   undo,
   type AppInfo,
   type CreatableKind,
   type Edited,
   type FrameState,
   type KeyframeKey,
-  type NumberEdit,
+  type ValueEdit,
+  type ValueGroup,
   type ProjectSummary,
   type Settings,
 } from "./backend";
@@ -53,6 +55,7 @@ export function App() {
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [frame, setFrame] = useState<FrameState | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [values, setValues] = useState<ValueGroup[]>([]);
   const [marker, setMarker] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedKeyframes, setSelectedKeyframes] = useState<KeyframeKey[]>([]);
@@ -96,6 +99,22 @@ export function App() {
       .setTitle(title)
       .catch(() => undefined);
   }, [project]);
+
+  // The frame editor shows the selected timeline at the current frame.
+  useEffect(() => {
+    if (!selected || !frame) {
+      setValues([]);
+      return;
+    }
+    let current = true;
+    timelineValues(selected).then(
+      (groups) => current && setValues(groups),
+      () => current && setValues([]),
+    );
+    return () => {
+      current = false;
+    };
+  }, [selected, frame]);
 
   // The viewport outlines the selection.
   const hasProject = project !== null;
@@ -164,7 +183,7 @@ export function App() {
   }, []);
 
   const editValues = useCallback(
-    (values: NumberEdit[], mode: "set" | "add", merge: string | null) => {
+    (values: ValueEdit[], mode: "set" | "add", merge: string | null) => {
       if (!selected) return;
       setPlaying(false);
       // Values are edited at a whole frame.
@@ -420,6 +439,7 @@ export function App() {
           frame={frame}
           selected={selected}
           settings={settings}
+          values={values}
           onSetSetting={(group, key, value, merge) => void run(() => setSetting(group, key, value, merge))}
           onSetInfo={(field, value) => void run(() => setProjectInfo(field, value))}
           onEditValues={editValues}

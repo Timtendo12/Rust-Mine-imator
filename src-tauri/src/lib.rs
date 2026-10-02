@@ -3,6 +3,7 @@
 
 mod commands;
 mod editing;
+mod frame_editor;
 mod recent;
 #[cfg(test)]
 mod render_check;
@@ -107,7 +108,8 @@ pub fn run() {
             editing::project_settings,
             editing::set_setting,
             editing::set_project_info,
-            editing::new_project
+            editing::new_project,
+            editing::timeline_values
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");
