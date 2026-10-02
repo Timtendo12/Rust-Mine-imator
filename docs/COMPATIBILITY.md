@@ -33,6 +33,18 @@ Fixes change behaviour in memory, not the layout on disk, so files stay readable
 | `part_root` is written for every timeline that is part of scenery but only read back for special blocks. | Read back for all of them. |
 | `BG_FOG_OBJECT_COLOR` is missing from the list of colour values, so it is written as a raw colour integer and is not clamped like other colours. | Treated as a colour everywhere; still written as the integer so the original can read it, and `#RRGGBB` is accepted too. |
 | A timeline whose `glint_tex` is `"null"` crashes on load. | Falls back to the built-in texture. |
+| The inverse kinematics solver tests convergence against the wrong joint and so always runs all 30 rounds. | Stops when the end of the limb is on the target. Results are the same. |
+| Models that copy the pose of their parent model stop following paths. | Path following is kept in the pose pass. |
+
+## Quirks of the original kept on purpose
+
+Changing these would alter how existing projects look.
+
+| Quirk | Why it is kept |
+|---|---|
+| Path lengths are measured about 5% short (a loop meant to sample 0..1 stops at 0.95). | `PATH_OFFSET` keyframes are expressed in these units; correcting the length would move every object that follows a path. |
+| `matrix_build` rotates before it scales. | The timeline transform compensates for it ("resize" scaling); results are the same as in the original. |
+| Positive rotation angles turn clockwise seen from the positive end of the axis. | All saved rotations depend on it. |
 
 ## Not yet supported
 

@@ -100,7 +100,7 @@ pub fn find_segment(keyframes: &[Keyframe], playhead: &Playhead) -> Segment {
             .enumerate()
             .filter(|(i, k)| in_loop(k) && current.is_none_or(|c| *i > c))
             .map(|(i, _)| i)
-            .last();
+            .next_back();
         if last.is_some() {
             current = last;
         }

@@ -68,12 +68,15 @@ Legend: **done** · **partial** · **not started**
 | Value interpolation rules and clamping | done |
 | Keyframe lookup and per-timeline value evaluation, including seamless repeat | done |
 | Matrix and vector maths with the original conventions | done |
-| Hierarchy, inherit flags, value inheritance | not started |
-| Timeline matrices (position, rotation, scale, rotation point) | not started |
-| Body part bending | not started |
-| Inverse kinematics | not started |
-| Paths and path following | not started |
-| Camera orbit and shake | not started |
+| Hierarchy, inherit flags, value inheritance | done |
+| Timeline matrices (position, rotation, scale, rotation point) | done |
+| Body part bend transform (children locked to the bent half) | done | 
+| Bending of the body part meshes themselves | not started |
+| Inverse kinematics (two-bone limbs, pole target, blend) | done |
+| Paths (spline sampling, frames) and path following | done |
+| Inherit pose | partial: implemented, not covered by a test yet |
+| Camera orbit | done |
+| Camera shake | not started |
 | Playback, looping, regions, seamless repeat | not started |
 
 ## Assets
