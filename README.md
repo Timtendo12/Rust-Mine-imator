@@ -10,7 +10,10 @@ projects and assets working.
 - `mi-core`: animatable value table, object type tables, colours, save ids.
 - `mi-format`: reading and writing of `.miproject`, `.miobject`, `.miframes`, `.miparticles` and
   `.mirender` (JSON formats 24–34), verified against the files bundled with the original.
-- A Tauri application shell that opens a project file and shows what is in it.
+- `mi-anim`: easing, keyframe interpolation, the transform hierarchy, paths and inverse kinematics.
+- `mi-project`: an open project with its timeline tree, open/save and scene evaluation.
+- A Tauri application that opens a project and shows its timelines, keyframes and the animated
+  values at any frame, with playback. There is no 3D viewport and no editing yet.
 
 [docs/PORTING_STATUS.md](docs/PORTING_STATUS.md) tracks every system of the original and whether it
 has been ported.
@@ -24,6 +27,10 @@ Requirements: Rust 1.85+, Node 20+, pnpm, and the
 pnpm install
 pnpm tauri dev        # run the application
 cargo test --workspace
+
+# No project at hand? Generate a small animated one and open it:
+cargo run -p mi-format --example sample_project -- sample.miproject
+pnpm tauri dev -- -- "$PWD/sample.miproject"
 ```
 
 See [docs/BUILD.md](docs/BUILD.md) for details.

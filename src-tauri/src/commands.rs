@@ -1,19 +1,19 @@
 //! Commands callable from the frontend.
 
-use mi_core::{version, IdGenerator, TlType};
-use mi_format::project::{LoadOptions, ProjectFile};
+use crate::state::AppState;
+use mi_core::{version, TlType};
+use mi_project::{Project, ProjectContext, ProjectError};
 use serde::Serialize;
 use std::path::Path;
+use tauri::State;
 
 /// Error returned to the frontend; shown to the user as is.
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
-    #[error("Could not read \"{path}\": {source}")]
-    Read { path: String, source: std::io::Error },
-    #[error("Could not open \"{path}\": {source}")]
-    Format { path: String, source: mi_format::FormatError },
-    #[error("\"{0}\" is a project from before version 1.1.0. Those cannot be opened yet.")]
-    LegacyProject(String),
+    #[error(transparent)]
+    Project(#[from] ProjectError),
+    #[error("No project is open.")]
+    NoProject,
 }
 
 impl Serialize for CommandError {
@@ -49,16 +49,17 @@ pub struct TimelineSummary {
     id: String,
     name: String,
     kind: &'static str,
-    parent: String,
-    tree_index: Option<i64>,
-    keyframes: usize,
+    /// Number of ancestors.
+    depth: usize,
+    /// Frames that have a keyframe.
+    keyframes: Vec<i64>,
     hidden: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
-    path: String,
+    path: Option<String>,
     name: String,
     author: String,
     description: String,
@@ -69,102 +70,187 @@ pub struct ProjectSummary {
     video_height: f64,
     /// Last frame that has a keyframe.
     length: i64,
+    /// Frame the project was saved at.
+    marker: f64,
     templates: usize,
     resources: usize,
     markers: usize,
     cameras: usize,
+    /// Timelines in tree order.
     timelines: Vec<TimelineSummary>,
     warnings: Vec<String>,
 }
 
-/// Reads a project file and reports what is in it.
-#[tauri::command]
-pub fn inspect_project(path: String) -> Result<ProjectSummary, CommandError> {
-    let extension = Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if extension == "mproj" || extension == "mani" {
-        return Err(CommandError::LegacyProject(path));
-    }
-
-    let bytes = std::fs::read(&path).map_err(|source| CommandError::Read { path: path.clone(), source })?;
-    let mut ids = IdGenerator::from_time();
-    let options = LoadOptions { ground_slot: 0.0, seed: 1.0, new_id: &mut || ids.next_id() };
-    let loaded =
-        ProjectFile::load(&bytes, options).map_err(|source| CommandError::Format { path: path.clone(), source })?;
-    let project = loaded.file;
-
-    let name = if project.info.name.is_empty() {
-        Path::new(&path).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned()
-    } else {
-        project.info.name.clone()
-    };
-    let timelines = &project.objects.timelines;
-
-    Ok(ProjectSummary {
-        name,
-        author: project.info.author.clone(),
-        description: project.info.description.clone(),
-        created_in: project.created_in.clone(),
-        format: project.loaded_format,
-        tempo: project.info.tempo,
-        video_width: project.info.video_width,
-        video_height: project.info.video_height,
-        length: timelines.iter().filter_map(|tl| tl.keyframes.last()).map(|k| k.position).max().unwrap_or(0),
-        templates: project.objects.templates.len(),
-        resources: project.objects.resources.len(),
-        markers: project.markers.len(),
+fn summarize(project: &Project, warnings: Vec<String>) -> ProjectSummary {
+    let file = project.file();
+    let timelines = project.timelines();
+    ProjectSummary {
+        path: project.path().map(|p| p.to_string_lossy().into_owned()),
+        name: file.info.name.clone(),
+        author: file.info.author.clone(),
+        description: file.info.description.clone(),
+        created_in: file.created_in.clone(),
+        format: file.loaded_format,
+        tempo: file.info.tempo,
+        video_width: file.info.video_width,
+        video_height: file.info.video_height,
+        length: project.length(),
+        marker: file.info.timeline.marker,
+        templates: project.templates().len(),
+        resources: project.resources().len(),
+        markers: file.markers.len(),
         cameras: timelines.iter().filter(|tl| tl.kind == TlType::Camera).count(),
-        timelines: timelines
+        timelines: project
+            .tree()
+            .order()
             .iter()
-            .map(|tl| TimelineSummary {
-                id: tl.id.to_string(),
-                name: tl.name.clone(),
-                kind: tl.kind.name(),
-                parent: tl.parent.to_string(),
-                tree_index: tl.parent_tree_index,
-                keyframes: tl.keyframes.len(),
-                hidden: tl.hide,
+            .map(|&i| {
+                let tl = &timelines[i];
+                TimelineSummary {
+                    id: tl.id.to_string(),
+                    name: tl.name.clone(),
+                    kind: tl.kind.name(),
+                    depth: project.tree().depth(i),
+                    keyframes: tl.keyframes.iter().map(|k| k.position).collect(),
+                    hidden: tl.hide,
+                }
             })
             .collect(),
-        warnings: loaded.warnings,
-        path,
-    })
+        warnings,
+    }
+}
+
+/// The project file the application was started with, if any.
+#[tauri::command]
+pub fn startup_project(state: State<'_, AppState>) -> Option<String> {
+    state.take_startup_path()
+}
+
+/// Opens a project file and makes it the current project.
+#[tauri::command]
+pub fn open_project(path: String, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
+    let (project, warnings) = Project::open(Path::new(&path), ProjectContext::default())?;
+    let summary = summarize(&project, warnings);
+    *state.project() = Some(project);
+    Ok(summary)
+}
+
+/// State of one timeline at a frame.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineFrame {
+    id: String,
+    position: [f64; 3],
+    rotation: [f64; 3],
+    scale: [f64; 3],
+    world_position: [f64; 3],
+    /// Visible after taking the parents into account.
+    visible: bool,
+    alpha: f64,
+    transition: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameState {
+    marker: f64,
+    /// In the same order as [`ProjectSummary::timelines`].
+    timelines: Vec<TimelineFrame>,
+    /// Id of the camera the scene is seen through at this frame.
+    active_camera: Option<String>,
+}
+
+fn frame_state(project: &Project, marker: f64) -> FrameState {
+    use mi_core::ValueId::*;
+    let (scene, order) = project.evaluate(marker);
+    let timelines = order
+        .iter()
+        .zip(&scene.nodes)
+        .map(|(&index, node)| {
+            let v = &node.values;
+            TimelineFrame {
+                id: project.timelines()[index].id.to_string(),
+                position: [v.number(PosX), v.number(PosY), v.number(PosZ)],
+                rotation: [v.number(RotX), v.number(RotY), v.number(RotZ)],
+                scale: [v.number(ScaX), v.number(ScaY), v.number(ScaZ)],
+                world_position: node.world_pos,
+                visible: node.inherited.visible,
+                alpha: node.inherited.alpha,
+                transition: v[Transition].as_str().unwrap_or("linear").to_owned(),
+            }
+        })
+        .collect();
+    let active_camera =
+        project.active_camera(&scene, &order).map(|index| project.timelines()[index].id.to_string());
+    FrameState { marker, timelines, active_camera }
+}
+
+/// Evaluates the open project at a frame.
+#[tauri::command]
+pub fn evaluate_frame(marker: f64, state: State<'_, AppState>) -> Result<FrameState, CommandError> {
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    Ok(frame_state(project, marker))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mi_core::SaveId;
-    use mi_format::project::Timeline;
+    use mi_core::{IdGenerator, SaveId, Value, ValueId};
+    use mi_format::project::{Keyframe, ProjectFile, Timeline};
 
-    #[test]
-    fn inspects_a_saved_project() {
-        let mut project = ProjectFile::new(0.0, 1.0);
-        project.info.author = "Someone".to_owned();
-        project.info.tempo = 30.0;
-        let mut camera = Timeline::new(SaveId::new("CAMERA0000000000"), TlType::Camera, &project.defaults);
+    fn project() -> Project {
+        let mut file = ProjectFile::new(0.0, 1.0);
+        file.info.name = "Test".to_owned();
+        file.info.author = "Someone".to_owned();
+        file.info.tempo = 30.0;
+
+        let mut folder = Timeline::new(SaveId::new("FOLDER0000000000"), TlType::Folder, &file.defaults);
+        folder.name = "Folder".to_owned();
+        folder.parent_tree_index = Some(1);
+        folder.default_values[ValueId::Visible] = Value::Bool(false);
+
+        let mut camera = Timeline::new(SaveId::new("CAMERA0000000000"), TlType::Camera, &file.defaults);
         camera.name = "Main camera".to_owned();
         camera.parent_tree_index = Some(0);
-        project.objects.timelines.push(camera);
+        for (position, x) in [(0, 0.0), (30, 60.0)] {
+            let mut values = camera.default_values.clone();
+            values[ValueId::PosX] = Value::Number(x);
+            camera.keyframes.push(Keyframe { position, values });
+        }
 
-        let path = std::env::temp_dir().join(format!("mi-inspect-{}.miproject", std::process::id()));
-        std::fs::write(&path, project.save()).unwrap();
-        let summary = inspect_project(path.to_string_lossy().into_owned());
-        std::fs::remove_file(&path).unwrap();
+        let mut cube = Timeline::new(SaveId::new("CUBE000000000000"), TlType::Cube, &file.defaults);
+        cube.name = "Cube".to_owned();
+        cube.parent = SaveId::new("FOLDER0000000000");
+        cube.parent_tree_index = Some(0);
 
-        let summary = summary.unwrap();
-        assert!(summary.name.starts_with("mi-inspect-"), "falls back to the file name: {}", summary.name);
-        assert_eq!(summary.author, "Someone");
-        assert_eq!(summary.tempo, 30.0);
-        assert_eq!(summary.cameras, 1);
-        assert_eq!(summary.timelines[0].kind, "camera");
-        assert_eq!(summary.timelines[0].parent, "root");
+        file.objects.timelines = vec![folder, camera, cube];
+        Project::from_file(file, IdGenerator::new(7)).0
     }
 
     #[test]
-    fn reports_unreadable_and_legacy_files() {
-        let missing = inspect_project("does/not/exist.miproject".to_owned()).unwrap_err();
-        assert!(matches!(missing, CommandError::Read { .. }));
-        let legacy = inspect_project("old.mproj".to_owned()).unwrap_err();
-        assert!(matches!(legacy, CommandError::LegacyProject(_)));
+    fn summary_lists_timelines_in_tree_order() {
+        let summary = summarize(&project(), vec!["note".to_owned()]);
+        assert_eq!(summary.name, "Test");
+        assert_eq!(summary.length, 30);
+        assert_eq!(summary.cameras, 1);
+        let names: Vec<&str> = summary.timelines.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Main camera", "Folder", "Cube"]);
+        assert_eq!(summary.timelines[2].depth, 1);
+        assert_eq!(summary.timelines[0].keyframes, [0, 30]);
+        assert_eq!(summary.warnings, ["note"]);
+    }
+
+    #[test]
+    fn frame_state_interpolates_and_inherits() {
+        let project = project();
+        let frame = frame_state(&project, 15.0);
+        assert_eq!(frame.timelines.len(), 3);
+        assert_eq!(frame.timelines[0].world_position, [30.0, 0.0, 0.0]);
+        assert_eq!(frame.active_camera.as_deref(), Some("CAMERA0000000000"));
+        // The cube inherits the folder's invisibility.
+        assert!(!frame.timelines[1].visible);
+        assert!(!frame.timelines[2].visible);
+        assert_eq!(frame.timelines[2].scale, [1.0, 1.0, 1.0]);
     }
 }

@@ -2,13 +2,15 @@
   color-scheme: dark;
   --background: #1e1f22;
   --panel: #2a2b2f;
+  --raised: #33353a;
   --border: #3a3b40;
   --text: #e8e8ea;
   --muted: #9a9ba3;
   --accent: #4f9dff;
+  --keyframe: #f2c14e;
   --error: #ff6b6b;
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 * {
@@ -26,6 +28,7 @@ body {
   background: var(--background);
   color: var(--text);
   user-select: none;
+  overflow: hidden;
 }
 
 .app {
@@ -37,10 +40,11 @@ body {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 6px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .title {
@@ -55,8 +59,20 @@ body {
   color: var(--muted);
 }
 
+.time {
+  font-variant-numeric: tabular-nums;
+  min-width: 190px;
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
 button {
-  padding: 6px 14px;
+  padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--accent);
@@ -65,14 +81,19 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  background: var(--raised);
+  color: var(--text);
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
 .error {
-  margin: 12px;
-  padding: 10px 12px;
+  margin: 10px 12px 0;
+  padding: 8px 12px;
   border: 1px solid var(--error);
   border-radius: 4px;
   color: var(--error);
@@ -89,42 +110,49 @@ button:disabled {
   padding: 24px;
 }
 
-.content {
+.workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 2fr);
-  gap: 12px;
-  padding: 12px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
 }
 
 .panel {
   min-height: 0;
-  overflow: auto;
-  padding: 12px 16px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
 
+.side {
+  overflow: auto;
+  padding: 12px 14px;
+}
+
 h1 {
   margin: 0 0 4px;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 h2 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
 }
 
+h2.section {
+  margin-top: 18px;
+}
+
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 6px 16px;
-  margin: 16px 0 0;
+  gap: 5px 14px;
+  margin: 12px 0 0;
 }
 
 dt {
@@ -134,10 +162,8 @@ dt {
 dd {
   margin: 0;
   user-select: text;
-}
-
-.path {
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .description {
@@ -154,43 +180,155 @@ dd {
   padding-left: 18px;
 }
 
-.tree ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.tree li {
+.timeline-panel {
+  overflow: hidden;
   display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 3px 8px;
-  border-radius: 3px;
 }
 
-.tree li:hover {
-  background: var(--border);
+.timeline-panel > .muted {
+  padding: 12px 14px;
 }
 
-.tree .kind {
-  min-width: 72px;
+/* One scroll container for both columns keeps rows aligned vertically. */
+.timeline {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  overflow-y: auto;
+}
+
+.timeline-list {
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.timeline-header,
+.timeline-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.timeline-row:hover,
+.track:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.timeline-row.selected,
+.track.selected {
+  background: rgba(79, 157, 255, 0.18);
+}
+
+.timeline-row.dimmed .name {
+  opacity: 0.45;
+}
+
+.timeline-row .kind {
+  flex: none;
+  min-width: 62px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.tree .name {
+.timeline-row .name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hidden-timeline .name {
-  opacity: 0.5;
+.badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+}
+
+.timeline-tracks {
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+}
+
+.timeline-ruler {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.ruler-label {
+  position: absolute;
+  top: 4px;
+  padding-left: 3px;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.track {
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.keyframe {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background: var(--keyframe);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--error);
+  pointer-events: none;
+  z-index: 3;
 }
 
 @media (max-width: 760px) {
-  .content {
+  .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .side {
+    max-height: 40vh;
+  }
+
+  .timeline {
+    grid-template-columns: 150px minmax(0, 1fr);
   }
 }

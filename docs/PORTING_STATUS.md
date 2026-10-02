@@ -52,7 +52,9 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status |
 |---|---|
-| Project state, object tree, reference counting | not started |
+| Open project: object lookup by save id, timeline tree (with repair of broken trees), open, save | done |
+| Scene evaluation at a frame (values, transforms, active camera) | done, without model data: body parts have no bend or part offsets until assets are loaded |
+| Reference counting of resources | not started |
 | Save id remapping when importing | not started |
 | Undo / redo (commands replacing 821 action scripts) | not started |
 | Selection, copy / paste, duplicate | not started |
@@ -77,7 +79,7 @@ Legend: **done** · **partial** · **not started**
 | Inherit pose | partial: implemented, not covered by a test yet |
 | Camera orbit | done |
 | Camera shake | not started |
-| Playback, looping, regions, seamless repeat | not started |
+| Playback | partial: driven by the frontend clock; looping and regions not yet |
 
 ## Assets
 
@@ -123,10 +125,11 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status | Notes |
 |---|---|---|
-| Application window, start page | partial | Opens a project file and lists its content; no editing |
+| Application window, start page | partial | Opens a project (dialog, or path argument / double-click), shows project info |
+| Timeline (read-only) | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, values of the selected timeline at the current frame. No editing, markers, regions or audio. |
 | Docking panels, pop-out windows | not started | |
 | Viewports and view toolbar | not started | |
-| Timeline (tree, dope sheet, markers, regions, audio clips) | not started | |
+| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | not started | |
 | Properties tabs (project, render, library, background, resources) | not started | |
 | Template editor, timeline editor, frame editor | not started | |
 | Ground editor | not started | |

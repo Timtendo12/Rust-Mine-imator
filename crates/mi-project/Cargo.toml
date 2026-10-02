@@ -1,0 +1,12 @@
+[package]
+name = "mi-project"
+description = "An open Mine-imator project: objects, timeline tree, open and save"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mi-anim = { workspace = true }
+mi-core = { workspace = true }
+mi-format = { workspace = true }
+thiserror = { workspace = true }

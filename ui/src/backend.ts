@@ -14,14 +14,15 @@ export interface TimelineSummary {
   id: string;
   name: string;
   kind: string;
-  parent: string;
-  treeIndex: number | null;
-  keyframes: number;
+  /** Number of ancestors in the timeline tree. */
+  depth: number;
+  /** Frames that have a keyframe, ascending. */
+  keyframes: number[];
   hidden: boolean;
 }
 
 export interface ProjectSummary {
-  path: string;
+  path: string | null;
   name: string;
   author: string;
   description: string;
@@ -31,14 +32,41 @@ export interface ProjectSummary {
   videoWidth: number;
   videoHeight: number;
   length: number;
+  marker: number;
   templates: number;
   resources: number;
   markers: number;
   cameras: number;
+  /** In tree order: every parent is followed by its children. */
   timelines: TimelineSummary[];
   warnings: string[];
 }
 
+export type Vec3 = [number, number, number];
+
+export interface TimelineFrame {
+  id: string;
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
+  worldPosition: Vec3;
+  visible: boolean;
+  alpha: number;
+  transition: string;
+}
+
+export interface FrameState {
+  marker: number;
+  /** Same order as `ProjectSummary.timelines`. */
+  timelines: TimelineFrame[];
+  activeCamera: string | null;
+}
+
 export const appInfo = () => invoke<AppInfo>("app_info");
 
-export const inspectProject = (path: string) => invoke<ProjectSummary>("inspect_project", { path });
+/** Path of the project file the application was started with. Only answered once. */
+export const startupProject = () => invoke<string | null>("startup_project");
+
+export const openProject = (path: string) => invoke<ProjectSummary>("open_project", { path });
+
+export const evaluateFrame = (marker: number) => invoke<FrameState>("evaluate_frame", { marker });
