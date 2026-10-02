@@ -1,7 +1,7 @@
 //! An open project.
 
 use crate::tree::Tree;
-use mi_anim::{update_scene, Playhead, SceneNode, SceneState};
+use mi_anim::{update_scene, PartInfo, Playhead, SceneNode, SceneState};
 use mi_core::{IdGenerator, SaveId, TlType};
 use mi_format::language::Language;
 use mi_format::project::{LoadOptions, ProjectFile, Resource, Template, Timeline};
@@ -299,6 +299,12 @@ impl Project {
     /// The timelines in tree order, as the transform update wants them.
     /// The second list maps each node back to its timeline index.
     pub fn scene_nodes(&self) -> (Vec<SceneNode<'_>>, Vec<usize>) {
+        self.scene_nodes_with(&|_| None)
+    }
+
+    /// Like [`Project::scene_nodes`], with the model part of each body part
+    /// timeline given by `part_of_timeline` (timeline index to part).
+    pub fn scene_nodes_with(&self, part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>) -> (Vec<SceneNode<'_>>, Vec<usize>) {
         let order = self.tree.order().to_vec();
         let mut node_of = vec![usize::MAX; self.timelines().len()];
         for (node, &timeline) in order.iter().enumerate() {
@@ -313,9 +319,7 @@ impl Project {
                     timeline,
                     parent: self.tree.parent(i).map(|p| node_of[p]),
                     part_of: timeline.part_of.as_id().and_then(|id| self.timeline_index(id)).map(|p| node_of[p]),
-                    // Model data comes from the Minecraft assets, which are
-                    // not loaded yet.
-                    part: None,
+                    part: part_of_timeline(i),
                     rot_point: if timeline.rot_point_custom { timeline.rot_point } else { [0.0; 3] },
                 }
             })
@@ -326,7 +330,13 @@ impl Project {
     /// Evaluates the whole scene at frame `marker`. `SceneState::nodes` is
     /// in tree order; the returned list gives the timeline index of each.
     pub fn evaluate(&self, marker: f64) -> (SceneState, Vec<usize>) {
-        let (nodes, order) = self.scene_nodes();
+        self.evaluate_with(marker, &|_| None)
+    }
+
+    /// Like [`Project::evaluate`], with model parts (see
+    /// [`Project::scene_nodes_with`]).
+    pub fn evaluate_with(&self, marker: f64, part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>) -> (SceneState, Vec<usize>) {
+        let (nodes, order) = self.scene_nodes_with(part_of_timeline);
         (update_scene(&nodes, &self.playhead(marker)), order)
     }
 

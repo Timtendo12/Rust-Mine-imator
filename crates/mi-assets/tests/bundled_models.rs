@@ -183,3 +183,47 @@ fn bending_moves_the_lower_half_only() {
     let at_max = shape_mesh(shape, Some(&bend), [max, 0.0, 0.0], BendStyle::Blocky);
     assert_eq!(over, at_max);
 }
+
+fn pack() -> mi_assets::AssetPack {
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/Data/Minecraft");
+    mi_assets::AssetPack::open(&folder, "1.20.2").unwrap()
+}
+
+#[test]
+fn every_pack_model_resolves_with_its_default_state() {
+    let pack = pack();
+    assert!(pack.model_names().len() > 80, "{}", pack.model_names().len());
+    for name in pack.model_names() {
+        let model = pack.resolve(name, &[]).unwrap_or_else(|| panic!("{name} does not resolve"));
+        // Every texture a shape uses exists in the pack.
+        for part in model.file.all_parts() {
+            for shape in &part.shapes {
+                let texture = model.shape_texture(&part.name, &shape.description, shape.texture_name.as_deref());
+                if texture.is_empty() || texture.starts_with("blocks") {
+                    continue;
+                }
+                assert!(pack.read(&format!("textures/{texture}.png")).is_some(), "{name}: missing {texture}");
+            }
+        }
+    }
+}
+
+#[test]
+fn states_choose_files_and_textures() {
+    use mi_format::StateValue;
+    let pack = pack();
+    let state = |pairs: &[(&str, &str)]| -> Vec<(String, StateValue)> {
+        pairs.iter().map(|(k, v)| (k.to_string(), StateValue::Str(v.to_string()))).collect()
+    };
+    let alex = pack.resolve("human", &state(&[("type", "slim"), ("variant", "alex")])).unwrap();
+    assert_eq!(alex.file.name, "alex");
+    assert_eq!(alex.shape_texture("head", "slim", None), "entity/player/slim/alex");
+
+    let ender = pack.resolve("chest", &state(&[("variant", "ender")])).unwrap();
+    assert_eq!(ender.part_texture("lock"), "entity/chest/ender");
+    let normal = pack.resolve("chest", &[]).unwrap();
+    assert_eq!(normal.part_texture("lock"), "entity/chest/normal");
+
+    let texture = pack.texture("entity/chest/normal").unwrap();
+    assert_eq!(texture.width, texture.height);
+}

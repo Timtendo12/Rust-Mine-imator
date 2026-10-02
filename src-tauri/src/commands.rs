@@ -204,7 +204,7 @@ pub fn forget_recent_project(filename: String, app: AppHandle) -> Vec<crate::rec
 /// Closes the current project and returns to the startup screen.
 #[tauri::command]
 pub fn close_project(state: State<'_, AppState>) {
-    *state.project() = None;
+    state.set_project(None);
     state.redraw();
 }
 
@@ -225,7 +225,7 @@ pub fn open_project(path: String, app: AppHandle, state: State<'_, AppState>) ->
     let summary = summarize(&project, state.language(), warnings);
     let work_camera = saved_work_camera(&project);
     let marker = summary.marker.min(summary.length as f64);
-    *state.project() = Some(project);
+    state.set_project(Some(project));
     state.update_view(|view| {
         view.marker = marker;
         view.work_camera = work_camera;

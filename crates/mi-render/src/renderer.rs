@@ -101,7 +101,9 @@ pub struct Renderer {
     texture_layout: wgpu::BindGroupLayout,
     textures: Vec<wgpu::BindGroup>,
     white: wgpu::BindGroup,
-    meshes: Vec<GpuMesh>,
+    /// `None` for removed meshes; their slots are reused.
+    meshes: Vec<Option<GpuMesh>>,
+    free_meshes: Vec<usize>,
 }
 
 fn object_buffer(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, stride: u64, capacity: usize) -> (wgpu::Buffer, wgpu::BindGroup) {
@@ -310,6 +312,7 @@ impl Renderer {
             textures: Vec::new(),
             white,
             meshes: Vec::new(),
+            free_meshes: Vec::new(),
         }
     }
 
@@ -320,8 +323,26 @@ impl Renderer {
             contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        self.meshes.push(GpuMesh { buffer, vertex_count: mesh.vertices.len() as u32 });
-        MeshId(self.meshes.len() - 1)
+        let gpu = GpuMesh { buffer, vertex_count: mesh.vertices.len() as u32 };
+        match self.free_meshes.pop() {
+            Some(slot) => {
+                self.meshes[slot] = Some(gpu);
+                MeshId(slot)
+            }
+            None => {
+                self.meshes.push(Some(gpu));
+                MeshId(self.meshes.len() - 1)
+            }
+        }
+    }
+
+    /// Frees a mesh. Its id may be handed out again by [`Renderer::add_mesh`].
+    pub fn remove_mesh(&mut self, id: MeshId) {
+        if let Some(slot) = self.meshes.get_mut(id.0) {
+            if slot.take().is_some() {
+                self.free_meshes.push(id.0);
+            }
+        }
     }
 
     /// Uploads an RGBA image of `width` × `height` pixels.
@@ -412,7 +433,7 @@ impl Renderer {
         let drawable: Vec<&RenderObject> = scene
             .objects
             .iter()
-            .filter(|o| self.meshes.get(o.mesh.0).is_some_and(|m| m.vertex_count > 0))
+            .filter(|o| self.meshes.get(o.mesh.0).and_then(Option::as_ref).is_some_and(|m| m.vertex_count > 0))
             .collect();
 
         if drawable.len() > self.object_capacity {
@@ -459,7 +480,7 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame_bind, &[]);
 
             for (i, object) in drawable.iter().enumerate() {
-                let mesh = &self.meshes[object.mesh.0];
+                let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
                 let pipeline = if object.backfaces { &self.pipeline_two_sided } else { &self.pipeline_cull };
                 let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
                 pass.set_pipeline(pipeline);

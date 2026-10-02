@@ -337,6 +337,7 @@ kbd {
 /* ---- Timeline ---- */
 
 .timeline-panel {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -397,6 +398,7 @@ input[type="range"] {
   display: grid;
   grid-template-columns: 250px max-content;
   align-content: start;
+  min-width: 0;
   overflow: auto;
 }
 

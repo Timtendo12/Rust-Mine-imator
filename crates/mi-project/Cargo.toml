@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 mi-anim = { workspace = true }
+mi-assets = { workspace = true }
 mi-core = { workspace = true }
 mi-format = { workspace = true }
 thiserror = { workspace = true }

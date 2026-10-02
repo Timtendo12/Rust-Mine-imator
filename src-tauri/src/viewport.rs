@@ -4,9 +4,12 @@
 //!
 //! Rendering happens on its own thread, which redraws when asked to.
 
-use crate::scene_builder::{build_scene, MeshKey, ViewCamera, ViewMode};
+use crate::scene_builder::{build_scene, SceneInputs, SceneResources, ViewCamera, ViewMode};
 use crate::state::AppState;
-use mi_render::{ground_mesh, shape_mesh, wgpu, GpuError, MeshId, Renderer, Viewport, WorkCamera};
+use mi_assets::Rgba;
+use mi_mesh::MeshData;
+use mi_render::{wgpu, GpuError, MeshId, Renderer, TextureFilter, TextureId, Viewport, WorkCamera};
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use tauri::{Manager, WebviewWindow};
@@ -72,22 +75,52 @@ pub enum ViewportError {
     Window(#[from] tauri::Error),
 }
 
-struct Meshes {
-    shapes: Vec<(MeshKey, MeshId)>,
+/// Meshes and textures uploaded for the scene, by key.
+#[derive(Default)]
+struct Cache {
+    meshes: HashMap<String, MeshId>,
+    /// `None` remembers textures that could not be loaded.
+    textures: HashMap<String, Option<TextureId>>,
+    /// Meshes of bent body parts, which change during animation.
+    bent: Vec<String>,
 }
 
-impl Meshes {
-    /// Returns the uploaded mesh for a key, building it on first use.
-    fn resolve(&mut self, renderer: &mut Renderer, key: MeshKey) -> MeshId {
-        if let Some((_, id)) = self.shapes.iter().find(|(k, _)| *k == key) {
+/// Bent meshes kept before the oldest are dropped.
+const MAX_BENT_MESHES: usize = 4096;
+
+struct Resources<'a> {
+    renderer: &'a mut Renderer,
+    cache: &'a mut Cache,
+}
+
+impl SceneResources for Resources<'_> {
+    fn mesh(&mut self, key: String, build: &dyn Fn() -> MeshData) -> MeshId {
+        if let Some(id) = self.cache.meshes.get(&key) {
             return *id;
         }
-        let data = match key {
-            MeshKey::Shape(shape, settings) => shape_mesh(shape, &settings),
-            MeshKey::Ground(render_distance) => ground_mesh(render_distance),
-        };
-        let id = renderer.add_mesh(&data);
-        self.shapes.push((key, id));
+        let id = self.renderer.add_mesh(&build());
+        // Body part meshes are keyed by their bend angles; keep the number
+        // of different ones bounded.
+        if key.starts_with("model:") {
+            self.cache.bent.push(key.clone());
+            if self.cache.bent.len() > MAX_BENT_MESHES {
+                for old in self.cache.bent.drain(..MAX_BENT_MESHES / 2) {
+                    if let Some(old_id) = self.cache.meshes.remove(&old) {
+                        self.renderer.remove_mesh(old_id);
+                    }
+                }
+            }
+        }
+        self.cache.meshes.insert(key, id);
+        id
+    }
+
+    fn texture(&mut self, key: String, load: &dyn Fn() -> Option<Rgba>) -> Option<TextureId> {
+        if let Some(id) = self.cache.textures.get(&key) {
+            return *id;
+        }
+        let id = load().map(|image| self.renderer.add_texture(&image.pixels, image.width, image.height, TextureFilter::Nearest));
+        self.cache.textures.insert(key, id);
         id
     }
 }
@@ -99,7 +132,7 @@ struct RenderThread {
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
     depth: wgpu::TextureView,
-    meshes: Meshes,
+    cache: Cache,
 }
 
 impl RenderThread {
@@ -141,8 +174,10 @@ impl RenderThread {
                 } else {
                     ViewCamera::Work(view.work_camera)
                 };
-                let (renderer, meshes) = (&mut self.renderer, &mut self.meshes);
-                build_scene(project, view.marker, camera, view.mode, &mut |key| meshes.resolve(renderer, key))
+                let bindings = state.bindings();
+                let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref() };
+                let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
+                build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
             })
         };
 
@@ -233,7 +268,7 @@ pub fn start(window: WebviewWindow) -> Result<ViewportHandle, ViewportError> {
 
     let renderer = Renderer::new(&device, &queue, format);
     let depth = renderer.create_depth_view(config.width, config.height);
-    let thread = RenderThread { window, surface, device, config, renderer, depth, meshes: Meshes { shapes: Vec::new() } };
+    let thread = RenderThread { window, surface, device, config, renderer, depth, cache: Cache::default() };
 
     let (sender, receiver) = mpsc::channel();
     std::thread::Builder::new()

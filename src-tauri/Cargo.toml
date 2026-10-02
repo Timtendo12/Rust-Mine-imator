@@ -13,8 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+mi-anim = { workspace = true }
+mi-assets = { workspace = true }
 mi-core = { workspace = true }
 mi-format = { workspace = true }
+mi-mesh = { workspace = true }
 glam = "0.30"
 mi-project = { workspace = true }
 mi-render = { workspace = true }

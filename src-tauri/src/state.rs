@@ -2,7 +2,8 @@
 
 use crate::viewport::{ViewState, ViewportHandle};
 use mi_format::language::Language;
-use mi_project::Project;
+use mi_assets::AssetPack;
+use mi_project::{ModelBindings, Project};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Everything the application keeps between commands. The frontend never
@@ -13,6 +14,9 @@ pub struct AppState {
     view: Mutex<ViewState>,
     viewport: OnceLock<ViewportHandle>,
     language: OnceLock<Language>,
+    pack: OnceLock<AssetPack>,
+    /// Models of the open project; replaced together with the project.
+    bindings: Mutex<Option<ModelBindings>>,
     startup_path: Mutex<Option<String>>,
 }
 
@@ -64,6 +68,29 @@ impl AppState {
 
     pub fn set_language(&self, language: Language) {
         let _ = self.language.set(language);
+    }
+
+    /// The Minecraft asset pack, once loaded.
+    pub fn pack(&self) -> Option<&AssetPack> {
+        self.pack.get()
+    }
+
+    pub fn set_pack(&self, pack: AssetPack) {
+        let _ = self.pack.set(pack);
+    }
+
+    pub fn bindings(&self) -> MutexGuard<'_, Option<ModelBindings>> {
+        lock(&self.bindings)
+    }
+
+    /// Replaces the open project (or closes it) and binds its models.
+    pub fn set_project(&self, project: Option<Project>) {
+        let bindings = match (&project, self.pack()) {
+            (Some(project), Some(pack)) => Some(ModelBindings::bind(project, pack)),
+            _ => None,
+        };
+        *lock(&self.project) = project;
+        *lock(&self.bindings) = bindings;
     }
 
     /// Registers the viewport once it has been created.

@@ -85,9 +85,9 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status |
 |---|---|
-| Minecraft asset pack loading and version switching | not started |
+| Minecraft asset pack loading | done (bundled 1.20.2; version switching and downloads not yet) |
 | Block states, block models, render models, connected blocks | not started |
-| Character and special block models (`.mimodel`), states, armour, patterns | not started |
+| Character and special block models (`.mimodel`), states | done: states choose files, textures and hidden parts/shapes; drawn in the viewport with bending. Armour, patterns (banners), model colour palettes and 3D planes not yet. |
 | Texture atlases, animated textures, biome tints | not started |
 | Resource packs, material and normal maps | not started |
 | Skins (including download and old 64×32 layout) | not started |
@@ -106,8 +106,9 @@ Legend: **done** · **partial** · **not started**
 | Shapes (cube, cone, cylinder, sphere, surface) with texture mapping options | done (untextured until assets load) |
 | Sun direction, day/night and twilight colours | done |
 | Sky background image, sun and moon discs, stars, clouds | not started |
-| Ground | partial: drawn in the grass colour; texture needs the Minecraft assets |
-| Models, blocks, scenery, items, text, paths, particles | not started |
+| Ground | done: pack texture tinted by biome colour (resource pack ground textures not yet) |
+| Characters and special blocks | done (body parts, textured, bent) |
+| Blocks, scenery, items, text, paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | not started |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |

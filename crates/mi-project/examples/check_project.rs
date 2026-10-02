@@ -45,6 +45,12 @@ fn main() {
 
         let (scene, _) = project.evaluate(0.0);
         println!("   evaluated {} timelines at frame 0", scene.nodes.len());
+        let pack_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/Data/Minecraft");
+        if let Ok(pack) = mi_assets::AssetPack::open(&pack_dir, "1.20.2") {
+            let bindings = mi_project::ModelBindings::bind(&project, &pack);
+            let body_parts = project.timelines().iter().filter(|t| t.kind == mi_core::TlType::Bodypart).count();
+            println!("   {} of {} body parts bound to a model", bindings.len(), body_parts);
+        }
 
         // Compare what we would write with what is on disk, line by line.
         let original = match std::fs::read(path) {

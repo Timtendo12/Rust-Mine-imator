@@ -2096,6 +2096,7 @@ name = "mi-project"
 version = "0.1.0"
 dependencies = [
  "mi-anim",
+ "mi-assets",
  "mi-core",
  "mi-format",
  "thiserror 2.0.21",
@@ -2124,8 +2125,11 @@ name = "mine-imator"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "mi-anim",
+ "mi-assets",
  "mi-core",
  "mi-format",
+ "mi-mesh",
  "mi-project",
  "mi-render",
  "pollster",

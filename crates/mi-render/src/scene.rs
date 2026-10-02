@@ -22,6 +22,14 @@ impl MeshId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TextureId(pub(crate) usize);
 
+impl TextureId {
+    /// An id that does not come from a renderer, for scenes that are only
+    /// inspected.
+    pub fn from_raw(index: usize) -> Self {
+        Self(index)
+    }
+}
+
 /// Colour adjustments of an object beyond its blend colour (`uColorsExt`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorTransform {

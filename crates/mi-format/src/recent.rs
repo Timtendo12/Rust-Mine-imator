@@ -26,7 +26,7 @@ pub struct RecentProject {
 impl RecentProject {
     /// Seconds since the Unix epoch, or `None` if never opened.
     pub fn last_opened_unix(&self) -> Option<f64> {
-        (self.last_opened >= 1.0).then(|| (self.last_opened - UNIX_EPOCH_AS_GM_DATE) * SECONDS_PER_DAY)
+        (self.last_opened >= 1.0).then_some((self.last_opened - UNIX_EPOCH_AS_GM_DATE) * SECONDS_PER_DAY)
     }
 }
 

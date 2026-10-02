@@ -27,6 +27,19 @@ pub fn run() {
                 Err(error) => eprintln!("Could not load the language file: {error}"),
             }
 
+            // The Minecraft assets ship with the program as well.
+            let pack = app
+                .path()
+                .resolve("assets/Data/Minecraft", tauri::path::BaseDirectory::Resource)
+                .map_err(|e| e.to_string())
+                .and_then(|folder| {
+                    mi_assets::AssetPack::open(&folder, mi_core::version::MINECRAFT_VERSION).map_err(|e| e.to_string())
+                });
+            match pack {
+                Ok(pack) => app.state::<state::AppState>().set_pack(pack),
+                Err(error) => eprintln!("Could not load the Minecraft assets: {error}"),
+            }
+
             let window = app.get_webview_window("main").ok_or("the main window is missing")?;
             match viewport::start(window.clone()) {
                 Ok(handle) => {
