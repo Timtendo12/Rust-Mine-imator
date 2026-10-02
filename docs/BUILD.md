@@ -12,6 +12,9 @@
 No other native libraries need to be built. (The original needs Qt, FFmpeg, OpenAL and libzip
 compiled from source; this rewrite uses Rust crates instead.)
 
+Exporting videos runs an `ffmpeg` program at run time (see COMPATIBILITY.md); it is not needed
+to build, and the encoding test is skipped where it is not installed.
+
 ## Commands
 
 Run from the repository root.

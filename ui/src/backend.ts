@@ -296,6 +296,18 @@ export const setSelection = (timelines: string[]) => invoke<void>("set_selection
 /** Renders the current frame at the project's size into an image file. */
 export const exportImage = (path: string) => invoke<void>("export_image", { path });
 
+export type MovieFormat = "mp4" | "mov" | "wmv" | "png";
+
+/**
+ * Renders the whole animation at the project's size into a video, or into
+ * numbered images for "png". Progress arrives as `export-progress` events.
+ */
+export const exportMovie = (path: string, format: MovieFormat, framesPerSecond: number, bitRate: number) =>
+  invoke<{ frames: number; cancelled: boolean }>("export_movie", { path, format, framesPerSecond, bitRate });
+
+/** Stops the running export after the frame it is at. */
+export const cancelExport = () => invoke<void>("cancel_export");
+
 /** Adds an item drawn from a texture of the asset pack. */
 export const createItem = (name: string) => invoke<Edited & { created: string[] }>("create_item", { name });
 

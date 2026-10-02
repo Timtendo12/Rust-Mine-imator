@@ -274,6 +274,84 @@ pub fn export_image(path: String, state: State<'_, AppState>) -> Result<(), Comm
     image::save_buffer(&path, &pixels, width, height, image::ColorType::Rgba8).map_err(|e| failed(e.to_string()))
 }
 
+/// How far an export is, sent to the frontend as `export-progress`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportProgress {
+    frame: usize,
+    total: usize,
+}
+
+/// What an export made.
+#[derive(Debug, Serialize)]
+pub struct Exported {
+    frames: usize,
+    cancelled: bool,
+}
+
+/// Renders the animation at the project's video size through the active
+/// camera and saves it as a video or as numbered images
+/// (`action_toolbar_exportmovie_save`). Runs off the main thread; the
+/// viewport shows the frames as they are made.
+#[tauri::command(async)]
+pub fn export_movie(
+    path: String,
+    format: String,
+    frames_per_second: f64,
+    bit_rate: u64,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Exported, CommandError> {
+    use crate::export::{self, Format, MovieOptions, Outcome};
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+
+    let failed = |reason: String| CommandError::Write { path: path.clone(), reason };
+    let format = Format::from_name(&format).ok_or_else(|| CommandError::Invalid(format!("unknown export format {format}")))?;
+    let options = MovieOptions { format, frames_per_second: frames_per_second.clamp(1.0, 120.0), bit_rate: bit_rate.max(1) };
+    let (size, tempo, end) = {
+        let guard = state.project();
+        let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+        let info = &project.file().info;
+        ((info.video_width.max(1.0) as u32, info.video_height.max(1.0) as u32), info.tempo.max(1.0), project.length() as f64)
+    };
+    let viewport = state.viewport().ok_or_else(|| failed("the viewport is not running".into()))?;
+    let markers = export::frame_markers(0.0, end, tempo, options.frames_per_second);
+    let sequence_total = export::sequence_total(0.0, end, tempo, options.frames_per_second);
+    let total = markers.len();
+
+    let previous = state.view().marker;
+    state.cancel_export().store(false, Ordering::Relaxed);
+    let mut done = 0;
+    let result = export::export(
+        &options,
+        Path::new(&path),
+        size,
+        &markers,
+        sequence_total,
+        |marker| {
+            state.update_view(|view| view.marker = marker);
+            viewport.render_image(size.0, size.1, true)
+        },
+        |frame| {
+            done = frame;
+            let _ = app.emit("export-progress", ExportProgress { frame, total });
+            !state.cancel_export().load(Ordering::Relaxed)
+        },
+    );
+    state.update_view(|view| view.marker = previous);
+    state.redraw();
+    match result.map_err(|e| failed(e.to_string()))? {
+        Outcome::Done => Ok(Exported { frames: total, cancelled: false }),
+        Outcome::Cancelled => Ok(Exported { frames: done, cancelled: true }),
+    }
+}
+
+/// Stops the export that is running after the frame it is at.
+#[tauri::command]
+pub fn cancel_export(state: State<'_, AppState>) {
+    state.cancel_export().store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Opens a project file and makes it the current project.
 #[tauri::command]
 pub fn open_project(path: String, app: AppHandle, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {

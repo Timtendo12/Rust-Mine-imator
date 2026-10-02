@@ -46,6 +46,7 @@ import {
   type Settings,
   type TimelineSettings,
 } from "./backend";
+import { ExportDialog } from "./ExportDialog";
 import { MenuBar, type Menu } from "./MenuBar";
 import { Properties } from "./Properties";
 import { StartScreen } from "./StartScreen";
@@ -75,6 +76,7 @@ export function App() {
   const [copied, setCopied] = useState(0);
   const hoverFrame = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -488,7 +490,19 @@ export function App() {
         },
       ],
     },
-    { title: "Render", items: [{ label: "Export image…", action: () => void doExportImage(), shortcut: "F10" }, { label: "Export animation…" }] },
+    {
+      title: "Render",
+      items: [
+        { label: "Export image…", action: () => void doExportImage(), shortcut: "F10" },
+        {
+          label: "Export animation…",
+          action: () => {
+            setPlaying(false);
+            setExporting(true);
+          },
+        },
+      ],
+    },
     {
       title: "View",
       items: [
@@ -562,6 +576,7 @@ export function App() {
           onEditDone={() => void finishEdit()}
         />
       </div>
+      {exporting && <ExportDialog project={project} onClose={() => setExporting(false)} onError={setError} />}
       <footer className="shortcut-bar">
         <span>
           <kbd>Left click</kbd> Select timeline

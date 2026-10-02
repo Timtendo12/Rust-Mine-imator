@@ -4,6 +4,7 @@
 mod commands;
 mod editing;
 mod frame_editor;
+mod export;
 mod gizmo;
 mod recent;
 #[cfg(test)]
@@ -103,6 +104,8 @@ pub fn run() {
             commands::viewport_pick,
             commands::set_selection,
             commands::export_image,
+            commands::export_movie,
+            commands::cancel_export,
             commands::viewport_gizmo,
             editing::set_timeline_values,
             editing::finish_edit,

@@ -133,7 +133,7 @@ Legend: **done** · **partial** · **not started**
 | Particle editor | not started |
 | Audio decoding, playback, waveforms | not started |
 | Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
-| Image sequence and video export with audio | not started |
+| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. Not yet: audio, timeline regions, high quality, hidden objects, removing the background, watermark, remembering the settings |
 
 ## User interface
 
