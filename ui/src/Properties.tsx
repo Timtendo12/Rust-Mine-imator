@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
-import type { FrameState, NumberEdit, ProjectSummary, Vec3 } from "./backend";
+import type { FrameState, NumberEdit, ProjectSummary, Settings, Vec3 } from "./backend";
 
 const formatNumber = (value: number) => (Math.round(value * 1000) / 1000).toString();
 const formatVec = (value: Vec3) => value.map(formatNumber).join(", ");
@@ -37,21 +37,42 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Swatch({ label, color }: { label: string; color: string }) {
+/** A colour picker; `onPick` is called while the picker moves. */
+function Swatch({ label, color, onPick }: { label: string; color: string; onPick: (color: string) => void }) {
   return (
-    <div className="swatch">
+    <label className="swatch">
       <div className="field-label">{label}</div>
-      <div className="swatch-color" style={{ background: color }} title={color} />
-    </div>
+      <input className="swatch-color" type="color" value={color.toLowerCase()} onChange={(e) => onPick(e.target.value.toUpperCase())} />
+    </label>
   );
 }
 
-function Toggle({ label, on }: { label: string; on: boolean }) {
+function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
   return (
-    <div className="toggle-row">
+    <button className="toggle-row" onClick={() => onChange(!on)} aria-pressed={on}>
       <span>{label}</span>
-      <span className={on ? "switch on" : "switch"} aria-label={on ? "on" : "off"} />
-    </div>
+      <span className={on ? "switch on" : "switch"} />
+    </button>
+  );
+}
+
+/** Text that is committed when the field is left or Enter is pressed. */
+function TextInput({ value, multiline, onCommit }: { value: string; multiline?: boolean; onCommit: (value: string) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const commit = () => {
+    if (text !== null && text !== value) onCommit(text);
+    setText(null);
+  };
+  const common = {
+    className: "text-input",
+    value: text ?? value,
+    onChange: (e: { target: { value: string } }) => setText(e.target.value),
+    onBlur: commit,
+  };
+  return multiline ? (
+    <textarea {...common} rows={3} />
+  ) : (
+    <input {...common} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
   );
 }
 
@@ -71,12 +92,14 @@ function NumberInput({
   value: number;
   step: number;
   onSet: (value: number) => void;
-  onDrag: (offset: number) => void;
+  /** Total change since the drag began, and the value it began at. */
+  onDrag: (offset: number, startValue: number) => void;
   onDragEnd: () => void;
 }) {
   // While the field has focus it shows what is typed; otherwise the value.
   const [text, setText] = useState<string | null>(null);
   const start = useRef<number | null>(null);
+  const startValue = useRef(value);
 
   const commit = () => {
     if (text !== null) {
@@ -97,11 +120,12 @@ function NumberInput({
           e.preventDefault();
           e.currentTarget.setPointerCapture(e.pointerId);
           start.current = e.clientX;
+          startValue.current = value;
         }}
         onPointerMove={(e) => {
           if (start.current === null) return;
           const offset = Math.round((e.clientX - start.current) * step * 1000) / 1000;
-          if (offset !== 0) onDrag(offset);
+          if (offset !== 0) onDrag(offset, startValue.current);
         }}
         onPointerUp={() => {
           if (start.current !== null) onDragEnd();
@@ -133,6 +157,11 @@ interface Props {
   project: ProjectSummary;
   frame: FrameState | null;
   selected: string | null;
+  /** Background and render settings as files store them. */
+  settings: Settings | null;
+  /** Changes a background or render setting; `merge` joins a drag into one undo step. */
+  onSetSetting: (group: "background" | "render", key: string, value: unknown, merge: string | null) => void;
+  onSetInfo: (field: "name" | "author" | "description" | "tempo" | "video_size", value: unknown) => void;
   /** Changes values of the selected timeline at the current frame. */
   onEditValues: (values: NumberEdit[], mode: "set" | "add", merge: string | null) => void;
   onEditDone: () => void;
@@ -142,7 +171,8 @@ interface Props {
 const AXES = ["X", "Y", "Z"] as const;
 
 /** The properties panel on the right. */
-export function Properties({ project, frame, selected, onEditValues, onEditDone }: Props) {
+export function Properties(props: Props) {
+  const { project, frame, selected, settings, onEditValues, onEditDone, onSetSetting, onSetInfo } = props;
   const [open, setOpen] = useState<Record<string, boolean>>({ project: true, selection: true });
   const toggle = (key: string) => setOpen((current) => ({ ...current, [key]: !current[key] }));
 
@@ -150,6 +180,21 @@ export function Properties({ project, frame, selected, onEditValues, onEditDone 
   const timeline = index >= 0 ? project.timelines[index] : null;
   const state = frame && index >= 0 ? frame.timelines[index] : null;
   const environment = project.environment;
+  const background = settings?.background ?? {};
+  const render = settings?.render ?? {};
+  const bool = (map: Record<string, unknown>, key: string) => map[key] === true;
+  const num = (map: Record<string, unknown>, key: string) => (typeof map[key] === "number" ? (map[key] as number) : 0);
+  const text = (map: Record<string, unknown>, key: string) => (typeof map[key] === "string" ? (map[key] as string) : "");
+  const number = (group: "background" | "render", key: string, label: string, step: number) => (
+    <NumberInput
+      label={label}
+      value={num(group === "background" ? background : render, key)}
+      step={step}
+      onSet={(value) => onSetSetting(group, key, value, null)}
+      onDrag={(offset, startValue) => onSetSetting(group, key, startValue + offset, `drag:${group}:${key}`)}
+      onDragEnd={onEditDone}
+    />
+  );
 
   return (
     <aside className="properties">
@@ -158,16 +203,46 @@ export function Properties({ project, frame, selected, onEditValues, onEditDone 
       </div>
       <div className="properties-scroll">
         <Section title="Project settings" open={!!open.project} onToggle={() => toggle("project")}>
-          <Field label="Name">{project.name || "(unnamed)"}</Field>
-          <Field label="Author">{project.author || "—"}</Field>
+          <Field label="Name">
+            <TextInput value={project.name} onCommit={(value) => onSetInfo("name", value)} />
+          </Field>
+          <Field label="Author">
+            <TextInput value={project.author} onCommit={(value) => onSetInfo("author", value)} />
+          </Field>
           <Field label="Description">
-            <span className="multiline">{project.description || "—"}</span>
+            <TextInput multiline value={project.description} onCommit={(value) => onSetInfo("description", value)} />
           </Field>
           <Field label="Project location">{projectFolder(project.path)}</Field>
           <Field label="Render size">
-            {project.videoWidth} × {project.videoHeight}
+            <div className="pair-input">
+              <NumberInput
+                label="W"
+                value={project.videoWidth}
+                step={0}
+                onSet={(value) => onSetInfo("video_size", [value, project.videoHeight])}
+                onDrag={() => undefined}
+                onDragEnd={() => undefined}
+              />
+              <NumberInput
+                label="H"
+                value={project.videoHeight}
+                step={0}
+                onSet={(value) => onSetInfo("video_size", [project.videoWidth, value])}
+                onDrag={() => undefined}
+                onDragEnd={() => undefined}
+              />
+            </div>
           </Field>
-          <Field label="Tempo">{project.tempo} frames per second</Field>
+          <Field label="Tempo (frames per second)">
+            <NumberInput
+              label="fps"
+              value={project.tempo}
+              step={0}
+              onSet={(value) => onSetInfo("tempo", value)}
+              onDrag={() => undefined}
+              onDragEnd={() => undefined}
+            />
+          </Field>
           <Field label="Saved with">
             {project.createdIn || "unknown"} (format {project.format})
           </Field>
@@ -184,8 +259,13 @@ export function Properties({ project, frame, selected, onEditValues, onEditDone 
 
         <Section title="Render settings" open={!!open.render} onToggle={() => toggle("render")}>
           <Field label="Preset">{project.renderSettings || "Custom"}</Field>
-          <Field label="Samples">{project.renderSamples}</Field>
-          <p className="muted">High quality rendering is not available yet.</p>
+          <Field label="Samples">{number("render", "render_samples", "#", 0.1)}</Field>
+          <Field label="Render distance">{number("render", "render_distance", "↔", 10)}</Field>
+          <Toggle label="Ambient occlusion" on={bool(render, "render_ssao")} onChange={(on) => onSetSetting("render", "render_ssao", on, null)} />
+          <Toggle label="Shadows" on={bool(render, "render_shadows")} onChange={(on) => onSetSetting("render", "render_shadows", on, null)} />
+          <Toggle label="Indirect lighting" on={bool(render, "render_indirect")} onChange={(on) => onSetSetting("render", "render_indirect", on, null)} />
+          <Toggle label="Reflections" on={bool(render, "render_reflections")} onChange={(on) => onSetSetting("render", "render_reflections", on, null)} />
+          <p className="muted">The viewport does not use these yet; they are saved for high quality rendering.</p>
         </Section>
 
         <Section title="Library" open={!!open.library} onToggle={() => toggle("library")}>
@@ -198,29 +278,46 @@ export function Properties({ project, frame, selected, onEditValues, onEditDone 
         <Section title="Environment" open={!!open.environment} onToggle={() => toggle("environment")}>
           <div className="dials">
             <div className="dial">
-              <span className="field-label">Time</span>
-              <span>{clockTime(environment.skyTime)}</span>
+              <span className="field-label">Time ({clockTime(num(background, "sky_time"))})</span>
+              {number("background", "sky_time", "°", 0.5)}
             </div>
             <div className="dial">
               <span className="field-label">Rotation</span>
-              <span>{formatNumber(environment.skyRotation)}°</span>
+              {number("background", "sky_rotation", "°", 0.5)}
             </div>
           </div>
-          <Toggle label="Clouds" on={environment.cloudsShow} />
-          <Toggle label="Ground" on={environment.groundShow} />
-          <Field label="Biome">{environment.biome}</Field>
+          {(
+            [
+              ["Clouds", "sky_clouds_show"],
+              ["Ground", "ground_show"],
+              ["Twilight", "twilight"],
+              ["Fog", "fog_show"],
+              ["Wind", "wind"],
+            ] as const
+          ).map(([label, key]) => (
+            <Toggle key={key} label={label} on={bool(background, key)} onChange={(on) => onSetSetting("background", key, on, null)} />
+          ))}
+          <Field label="Biome">{text(background, "biome") || environment.biome}</Field>
           <div className="field-label">Scene colors:</div>
           <div className="swatches">
-            <Swatch label="Sky" color={environment.skyColor} />
-            <Swatch label="Clouds" color={environment.cloudsColor} />
-            <Swatch label="Sunlight" color={environment.sunlightColor} />
-            <Swatch label="Ambient" color={environment.ambientColor} />
-            <Swatch label="Night" color={environment.nightColor} />
+            {(
+              [
+                ["Sky", "sky_color"],
+                ["Clouds", "sky_clouds_color"],
+                ["Sunlight", "sunlight_color"],
+                ["Ambient", "ambient_color"],
+                ["Night", "night_color"],
+              ] as const
+            ).map(([label, key]) => (
+              <Swatch
+                key={key}
+                label={label}
+                color={text(background, key) || "#000000"}
+                onPick={(color) => onSetSetting("background", key, color, `color:${key}`)}
+              />
+            ))}
           </div>
-          <Toggle label="Twilight" on={environment.twilight} />
-          <Toggle label="Fog" on={environment.fogShow} />
-          <Toggle label="Wind" on={environment.wind} />
-          <Field label="Texture animation speed">{formatNumber(environment.textureAnimationSpeed)}</Field>
+          <Field label="Texture animation speed">{number("background", "texture_animation_speed", "×", 0.005)}</Field>
         </Section>
 
         <Section title="Resources" open={!!open.resources} onToggle={() => toggle("resources")}>

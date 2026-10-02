@@ -11,13 +11,17 @@ import {
   evaluateFrame,
   finishEdit,
   moveKeyframes,
+  newProject,
   openProject,
+  projectSettings,
   redo,
   removeKeyframes,
   removeTimelines,
   renameTimeline,
   reparentTimelines,
   saveProject,
+  setProjectInfo,
+  setSetting,
   setTimelinesHidden,
   setTimelineValues,
   startupProject,
@@ -29,6 +33,7 @@ import {
   type KeyframeKey,
   type NumberEdit,
   type ProjectSummary,
+  type Settings,
 } from "./backend";
 import { MenuBar, type Menu } from "./MenuBar";
 import { Properties } from "./Properties";
@@ -46,6 +51,7 @@ export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [frame, setFrame] = useState<FrameState | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [marker, setMarker] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedKeyframes, setSelectedKeyframes] = useState<KeyframeKey[]>([]);
@@ -88,6 +94,12 @@ export function App() {
     getCurrentWindow()
       .setTitle(title)
       .catch(() => undefined);
+  }, [project]);
+
+  // Settings shown in the properties panel follow every change of the project.
+  useEffect(() => {
+    if (!project) return;
+    projectSettings().then(setSettings, () => setSettings(null));
   }, [project]);
 
   // The backend evaluates the scene; only the latest answer is shown so that
@@ -245,6 +257,20 @@ export function App() {
     if (typeof path === "string") await loadProject(path);
   }, [confirmDiscard, loadProject]);
 
+  const startNew = useCallback(async () => {
+    if (!(await confirmDiscard())) return;
+    setPlaying(false);
+    setFrame(null);
+    setSelected(null);
+    setSelectedKeyframes([]);
+    setMarker(0);
+    try {
+      setProject(await newProject());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [confirmDiscard]);
+
   const close = useCallback(async () => {
     if (!(await confirmDiscard())) return;
     setPlaying(false);
@@ -272,6 +298,9 @@ export function App() {
       } else if (ctrl && (key === "y" || (key === "z" && event.shiftKey))) {
         event.preventDefault();
         doRedo();
+      } else if (ctrl && key === "n") {
+        event.preventDefault();
+        void startNew();
       } else if (ctrl && key === "d") {
         event.preventDefault();
         void duplicate();
@@ -284,7 +313,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate]);
+  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew]);
 
   if (!project) {
     return (
@@ -304,7 +333,7 @@ export function App() {
     {
       title: "File",
       items: [
-        { label: "New project" },
+        { label: "New project", action: () => void startNew(), shortcut: "Ctrl+N" },
         { label: "Open project…", action: browse },
         { label: "Save project", action: () => void doSave(), shortcut: "Ctrl+S" },
         { label: "Save as…", action: () => void saveAs(), shortcut: "Ctrl+Shift+S" },
@@ -373,6 +402,9 @@ export function App() {
           project={project}
           frame={frame}
           selected={selected}
+          settings={settings}
+          onSetSetting={(group, key, value, merge) => void run(() => setSetting(group, key, value, merge))}
+          onSetInfo={(field, value) => void run(() => setProjectInfo(field, value))}
           onEditValues={editValues}
           onEditDone={() => void finishEdit()}
         />

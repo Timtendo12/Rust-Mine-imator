@@ -55,6 +55,36 @@ macro_rules! record {
             pub(crate) fn load_fields(&mut self, map: &$crate::json::JsonObject) {
                 $( $crate::record::Field::load(&mut self.$field, $crate::record::kind::$kind, map, $key); )*
             }
+
+            /// The keys of the fields as files store them, in file order.
+            #[allow(dead_code)]
+            pub const KEYS: &'static [&'static str] = &[$($key),*];
+
+            /// Sets the field stored under `key` from a value as files store
+            /// it (colours as `#RRGGBB`, points as `[x, z, y]`). Returns
+            /// whether there is such a field.
+            #[allow(dead_code)]
+            pub fn set_field(&mut self, key: &str, value: $crate::json::Json) -> bool {
+                if !Self::KEYS.contains(&key) {
+                    return false;
+                }
+                let map: $crate::json::JsonObject = std::iter::once((key.to_owned(), value)).collect();
+                self.load_fields(&map);
+                true
+            }
+
+            /// All fields as files store them.
+            #[allow(dead_code)]
+            pub fn fields_json(&self) -> $crate::json::JsonObject {
+                let mut w = $crate::json::JsonWriter::new();
+                w.object_start(None);
+                self.save_fields(&mut w);
+                w.object_done();
+                match $crate::json::parse(w.finish().as_bytes()) {
+                    Ok($crate::json::Json::Object(map)) => map,
+                    _ => Default::default(),
+                }
+            }
         }
     };
 }

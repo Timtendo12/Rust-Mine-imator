@@ -139,13 +139,14 @@ Legend: **done** · **partial** · **not started**
 |---|---|---|
 | Startup screen | partial | Recent projects with thumbnails, sort, remove, browse. No "New project", pinning or list view. |
 | Menu bar | partial | File, Edit, Render, View, Help as in the original; only open, close and navigation work, the rest is shown disabled |
-| Properties panel | partial | Project settings, render, library, environment and resources sections, read-only. The selected timeline's position, rotation, scale and alpha can be typed or dragged |
+| Properties panel | partial | Project settings (name, author, description, render size, tempo), render settings (samples, distance, main effects), environment (time, rotation, clouds, ground, twilight, fog, wind, scene colours, texture speed) are editable with undo; library and resources are read-only. The selected timeline's position, rotation, scale and alpha can be typed or dragged |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
 | Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. No markers, regions, audio, box selection or copy and paste. |
 | Docking panels, pop-out windows | not started | |
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframe moving and removing; reparenting, markers, regions and audio clips not yet |
+| New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Backups, autosave and the thumbnail are not written yet |
 | Properties tabs (project, render, library, background, resources) | not started | |
 | Template editor, timeline editor, frame editor | not started | |

@@ -89,7 +89,11 @@ export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onCl
       ref={panel}
       role="dialog"
       aria-label="Workbench"
-      style={{ top: Math.max(0, Math.min(anchor.bottom + 2, window.innerHeight - HEIGHT - 4)), left: anchor.left }}
+      style={{
+        // Below the button if it fits, else above it.
+        top: anchor.bottom + 2 + HEIGHT <= window.innerHeight ? anchor.bottom + 2 : Math.max(0, anchor.top - HEIGHT - 2),
+        left: anchor.left,
+      }}
     >
       <div className="workbench-categories">
         {CATEGORIES.map(([key, label]) => (

@@ -10,7 +10,7 @@ mod scenery;
 mod timeline_ops;
 mod tree;
 
-pub use editing::{KeyframeRef, ValueChange};
+pub use editing::{InfoChange, KeyframeRef, ValueChange};
 pub use history::{Edit, History, HISTORY_LIMIT};
 pub use models::{ModelBindings, ModelTextures, PartBinding};
 pub use project::{Project, ProjectContext, ProjectError, ScenerySize};

@@ -23,6 +23,7 @@ mi-project = { workspace = true }
 mi-render = { workspace = true }
 pollster = "0.4"
 serde = { workspace = true }
+serde_json = { workspace = true }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 thiserror = { workspace = true }

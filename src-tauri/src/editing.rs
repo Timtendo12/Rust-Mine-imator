@@ -271,3 +271,105 @@ pub fn create_block(name: String, state: State<'_, AppState>) -> Result<Created,
     let (id, edited) = change(&state, |p| p.create_block(&name, block_state))?;
     Ok(Created { edited, created: vec![id.to_string()] })
 }
+
+/// A JSON value from the frontend as the project file reader takes it.
+fn file_json(value: &serde_json::Value) -> mi_format::json::Json {
+    use mi_format::json::Json;
+    match value {
+        serde_json::Value::Null => Json::Null,
+        serde_json::Value::Bool(b) => Json::Bool(*b),
+        serde_json::Value::Number(n) => Json::Number(n.as_f64().unwrap_or(0.0)),
+        serde_json::Value::String(s) => Json::String(s.clone()),
+        serde_json::Value::Array(list) => Json::Array(list.iter().map(file_json).collect()),
+        serde_json::Value::Object(map) => Json::Object(map.iter().map(|(k, v)| (k.clone(), file_json(v))).collect()),
+    }
+}
+
+fn frontend_json(value: &mi_format::json::Json) -> serde_json::Value {
+    use mi_format::json::Json;
+    match value {
+        Json::Null => serde_json::Value::Null,
+        Json::Bool(b) => (*b).into(),
+        Json::Number(n) => serde_json::Number::from_f64(*n).map_or(serde_json::Value::Null, serde_json::Value::Number),
+        Json::String(s) => s.clone().into(),
+        Json::Array(list) => list.iter().map(frontend_json).collect(),
+        Json::Object(map) => map.iter().map(|(k, v)| (k.to_owned(), frontend_json(v))).collect::<serde_json::Map<_, _>>().into(),
+    }
+}
+
+/// Background and render settings as project files store them.
+#[derive(Debug, Serialize)]
+pub struct Settings {
+    background: serde_json::Value,
+    render: serde_json::Value,
+}
+
+#[tauri::command]
+pub fn project_settings(state: State<'_, AppState>) -> Result<Settings, CommandError> {
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    let file = project.file();
+    Ok(Settings {
+        background: frontend_json(&mi_format::json::Json::Object(file.background.fields_json())),
+        render: frontend_json(&mi_format::json::Json::Object(file.render.fields_json())),
+    })
+}
+
+/// Changes a background (`group: "background"`) or render setting by its
+/// key in project files.
+#[tauri::command]
+pub fn set_setting(
+    group: String,
+    key: String,
+    value: serde_json::Value,
+    merge: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Edited, CommandError> {
+    let value = file_json(&value);
+    let (known, edited) = change(&state, |p| match group.as_str() {
+        "background" => p.set_background_field(&key, value, merge.as_deref()),
+        "render" => p.set_render_field(&key, value, merge.as_deref()),
+        _ => false,
+    })?;
+    if !known {
+        return Err(CommandError::Invalid(format!("unknown setting {group}.{key}")));
+    }
+    Ok(edited)
+}
+
+/// Changes a project setting: `name`, `author`, `description`, `tempo` or
+/// `video_size` (`[width, height]`).
+#[tauri::command]
+pub fn set_project_info(field: String, value: serde_json::Value, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    use mi_project::InfoChange;
+    let text = || value.as_str().unwrap_or("").to_owned();
+    let change_ = match field.as_str() {
+        "name" => InfoChange::Name(text()),
+        "author" => InfoChange::Author(text()),
+        "description" => InfoChange::Description(text()),
+        "tempo" => InfoChange::Tempo(value.as_f64().unwrap_or(24.0)),
+        "video_size" => {
+            let size = value.as_array().map(|a| (a.first().and_then(|v| v.as_f64()), a.get(1).and_then(|v| v.as_f64())));
+            match size {
+                Some((Some(w), Some(h))) => InfoChange::VideoSize(w, h),
+                _ => return Err(CommandError::Invalid("video_size needs [width, height]".into())),
+            }
+        }
+        other => return Err(CommandError::Invalid(format!("unknown project setting {other}"))),
+    };
+    Ok(change(&state, |p| p.set_project_info(change_))?.1)
+}
+
+/// Starts an empty project, which is saved with "save as".
+#[tauri::command]
+pub fn new_project(state: State<'_, AppState>) -> ProjectSummary {
+    let project = Project::new(mi_project::ProjectContext::default());
+    let summary = summarize(&project, state.language(), Vec::new());
+    let work_camera = crate::scene_builder::saved_work_camera(&project);
+    state.set_project(Some(project));
+    state.update_view(|view| {
+        view.marker = 0.0;
+        view.work_camera = work_camera;
+    });
+    summary
+}

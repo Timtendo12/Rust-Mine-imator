@@ -227,3 +227,21 @@ export const createModel = (name: string) => invoke<Edited & { created: string[]
 
 /** Adds a block in its default state. */
 export const createBlock = (name: string) => invoke<Edited & { created: string[] }>("create_block", { name });
+
+/** Background and render settings by their keys in project files. */
+export interface Settings {
+  background: Record<string, unknown>;
+  render: Record<string, unknown>;
+}
+
+export const projectSettings = () => invoke<Settings>("project_settings");
+
+/** Changes a background or render setting; values as project files store them. */
+export const setSetting = (group: "background" | "render", key: string, value: unknown, merge: string | null = null) =>
+  invoke<Edited>("set_setting", { group, key, value, merge });
+
+export const setProjectInfo = (field: "name" | "author" | "description" | "tempo" | "video_size", value: unknown) =>
+  invoke<Edited>("set_project_info", { field, value });
+
+/** Starts an empty project. */
+export const newProject = () => invoke<ProjectSummary>("new_project");

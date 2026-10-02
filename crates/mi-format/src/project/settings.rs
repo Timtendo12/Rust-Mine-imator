@@ -498,6 +498,22 @@ mod tests {
     }
 
     #[test]
+    fn record_fields_by_key() {
+        use crate::json::Json;
+        let mut background = Background::default();
+        assert!(background.set_field("sky_time", Json::Number(45.0)));
+        assert!(background.set_field("fog_show", Json::Bool(false)));
+        assert!(background.set_field("sky_color", Json::String("#102030".into())));
+        assert!(!background.set_field("no_such_field", Json::Null));
+        assert_eq!(background.sky_time, 45.0);
+        assert!(!background.fog_show);
+        assert_eq!(background.sky_color, mi_core::Color::rgb(0x10, 0x20, 0x30));
+        let fields = background.fields_json();
+        assert_eq!(fields.real("sky_time"), Some(45.0));
+        assert_eq!(fields.string("sky_color"), Some("#102030"));
+    }
+
+    #[test]
     fn project_info_round_trip() {
         let mut info = ProjectInfo { name: "Tëst".into(), tempo: 30.0, ..Default::default() };
         info.view_main_camera = ViewCamera::Timeline(SaveId::new("CAM0000000000000"));

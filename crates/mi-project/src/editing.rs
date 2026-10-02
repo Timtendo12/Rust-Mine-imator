@@ -5,13 +5,25 @@
 use crate::Project;
 use mi_anim::value_rules::{clamp, ClampContext};
 use mi_core::{SaveId, Value, ValueId};
-use mi_format::project::{Keyframe, Timeline};
+use mi_format::json::Json;
+use mi_format::project::{Background, Keyframe, RenderSettings, Timeline};
 
 /// A keyframe, by its timeline and frame.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyframeRef {
     pub timeline: SaveId,
     pub position: i64,
+}
+
+/// A change of the project settings.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InfoChange {
+    Name(String),
+    Author(String),
+    Description(String),
+    /// Frames per second, 1 to 100 as in the original.
+    Tempo(f64),
+    VideoSize(f64, f64),
 }
 
 /// How an edited value relates to the one already there.
@@ -120,6 +132,44 @@ impl Project {
             for key in keys {
                 if let Some(timeline) = edit.timeline(&key.timeline) {
                     timeline.keyframes.retain(|k| k.position != key.position);
+                }
+            }
+        });
+    }
+
+    /// Sets a background setting by its key in project files (sky, fog,
+    /// ground, ...). Returns whether the key exists.
+    pub fn set_background_field(&mut self, key: &str, value: Json, merge: Option<&str>) -> bool {
+        if !Background::KEYS.contains(&key) {
+            return false;
+        }
+        self.edit("Change environment", merge, |edit| edit.background().set_field(key, value))
+    }
+
+    /// Sets a render setting by its key in project files. Choosing settings
+    /// by hand makes them custom rather than a preset.
+    pub fn set_render_field(&mut self, key: &str, value: Json, merge: Option<&str>) -> bool {
+        if !RenderSettings::KEYS.contains(&key) {
+            return false;
+        }
+        self.edit("Change render settings", merge, |edit| {
+            edit.info().render_settings.clear();
+            edit.render().set_field(key, value)
+        })
+    }
+
+    /// Changes a project setting (`action_project_*`).
+    pub fn set_project_info(&mut self, change: InfoChange) {
+        self.edit("Change project settings", None, |edit| {
+            let info = edit.info();
+            match change {
+                InfoChange::Name(name) => info.name = name,
+                InfoChange::Author(author) => info.author = author,
+                InfoChange::Description(description) => info.description = description,
+                InfoChange::Tempo(tempo) => info.tempo = tempo.clamp(1.0, 100.0).round(),
+                InfoChange::VideoSize(width, height) => {
+                    info.video_width = width.clamp(1.0, 8192.0).round();
+                    info.video_height = height.clamp(1.0, 8192.0).round();
                 }
             }
         });
