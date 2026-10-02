@@ -425,3 +425,60 @@ pub fn create_item(name: String, state: State<'_, AppState>) -> Result<Created, 
     let (id, edited) = change(&state, |p| p.create_item(&name))?;
     Ok(Created { edited, created: vec![id.to_string()] })
 }
+
+/// Settings of a timeline that are not animated, as project files store
+/// them. Groups a timeline's type has no use for are absent.
+#[derive(Debug, Serialize)]
+pub struct TimelineSettings {
+    inherit: Option<serde_json::Value>,
+    appearance: Option<serde_json::Value>,
+    flags: serde_json::Value,
+}
+
+#[tauri::command]
+pub fn timeline_settings(id: String, state: State<'_, AppState>) -> Result<Option<TimelineSettings>, CommandError> {
+    use mi_core::ValueType;
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    let Some(timeline) = project.timeline(&SaveId::new(&id)) else { return Ok(None) };
+    let types = timeline.kind.value_types(false);
+    let object = |map| frontend_json(&mi_format::json::Json::Object(map));
+    Ok(Some(TimelineSettings {
+        inherit: types.has(ValueType::Hierarchy).then(|| object(timeline.inherit.fields_json())),
+        appearance: types.has(ValueType::Appearance).then(|| object(timeline.appearance.fields_json())),
+        flags: serde_json::json!({
+            "lock": timeline.lock,
+            "lock_bend": timeline.lock_bend,
+            "scale_resize": timeline.scale_resize,
+            "hq_hiding": timeline.hq_hiding,
+            "lq_hiding": timeline.lq_hiding,
+            "wind": timeline.wind,
+            "wind_terrain": timeline.wind_terrain,
+        }),
+    }))
+}
+
+/// Changes a setting of timelines: `group` is `inherit`, `appearance` or
+/// `flags`, `key` the name in project files.
+#[tauri::command]
+pub fn set_timeline_setting(
+    timelines: Vec<String>,
+    group: String,
+    key: String,
+    value: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<Edited, CommandError> {
+    use mi_project::TimelineSetting;
+    let setting = match group.as_str() {
+        "inherit" => TimelineSetting::Inherit,
+        "appearance" => TimelineSetting::Appearance,
+        "flags" => TimelineSetting::Flag,
+        other => return Err(CommandError::Invalid(format!("unknown group of timeline settings {other}"))),
+    };
+    let value = file_json(&value);
+    let (known, edited) = change(&state, |p| p.set_timeline_setting(&ids(&timelines), setting, &key, value))?;
+    if !known {
+        return Err(CommandError::Invalid(format!("unknown timeline setting {group}.{key}")));
+    }
+    Ok(edited)
+}

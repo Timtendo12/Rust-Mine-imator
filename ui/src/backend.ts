@@ -282,3 +282,18 @@ export const exportImage = (path: string) => invoke<void>("export_image", { path
 
 /** Adds an item drawn from a texture of the asset pack. */
 export const createItem = (name: string) => invoke<Edited & { created: string[] }>("create_item", { name });
+
+/** Settings of a timeline that are not animated, by their keys in project files. */
+export interface TimelineSettings {
+  /** What it takes over from its parent; null for types without a place in the hierarchy. */
+  inherit: Record<string, unknown> | null;
+  appearance: Record<string, unknown> | null;
+  flags: Record<string, boolean>;
+}
+
+export type TimelineSettingGroup = "inherit" | "appearance" | "flags";
+
+export const timelineSettings = (id: string) => invoke<TimelineSettings | null>("timeline_settings", { id });
+
+export const setTimelineSetting = (timelines: string[], group: TimelineSettingGroup, key: string, value: unknown) =>
+  invoke<Edited>("set_timeline_setting", { timelines, group, key, value });

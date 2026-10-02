@@ -24,10 +24,12 @@ import {
   saveProject,
   setProjectInfo,
   setSelection,
+  setTimelineSetting,
   setSetting,
   setTimelinesHidden,
   setTimelineValues,
   startupProject,
+  timelineSettings,
   timelineValues,
   undo,
   type AppInfo,
@@ -39,6 +41,7 @@ import {
   type ValueGroup,
   type ProjectSummary,
   type Settings,
+  type TimelineSettings,
 } from "./backend";
 import { MenuBar, type Menu } from "./MenuBar";
 import { Properties } from "./Properties";
@@ -58,6 +61,7 @@ export function App() {
   const [frame, setFrame] = useState<FrameState | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [values, setValues] = useState<ValueGroup[]>([]);
+  const [tlSettings, setTlSettings] = useState<TimelineSettings | null>(null);
   const [marker, setMarker] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedKeyframes, setSelectedKeyframes] = useState<KeyframeKey[]>([]);
@@ -106,12 +110,17 @@ export function App() {
   useEffect(() => {
     if (!selected || !frame) {
       setValues([]);
+      setTlSettings(null);
       return;
     }
     let current = true;
     timelineValues(selected).then(
       (groups) => current && setValues(groups),
       () => current && setValues([]),
+    );
+    timelineSettings(selected).then(
+      (settings) => current && setTlSettings(settings),
+      () => current && setTlSettings(null),
     );
     return () => {
       current = false;
@@ -461,6 +470,10 @@ export function App() {
           selected={selected}
           settings={settings}
           values={values}
+          timelineSettings={tlSettings}
+          onSetTimelineSetting={(group, key, value) =>
+            selected && void run(() => setTimelineSetting([selected], group, key, value))
+          }
           onSetSetting={(group, key, value, merge) => void run(() => setSetting(group, key, value, merge))}
           onSetInfo={(field, value) => void run(() => setProjectInfo(field, value))}
           onEditValues={editValues}

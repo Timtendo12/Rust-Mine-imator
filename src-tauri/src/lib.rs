@@ -123,7 +123,9 @@ pub fn run() {
             editing::set_setting,
             editing::set_project_info,
             editing::new_project,
-            editing::timeline_values
+            editing::timeline_values,
+            editing::timeline_settings,
+            editing::set_timeline_setting
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");

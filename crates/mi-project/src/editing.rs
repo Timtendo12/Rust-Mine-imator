@@ -6,7 +6,7 @@ use crate::Project;
 use mi_anim::value_rules::{clamp, ClampContext};
 use mi_core::{SaveId, Value, ValueId};
 use mi_format::json::Json;
-use mi_format::project::{Background, Keyframe, RenderSettings, Timeline};
+use mi_format::project::{Appearance, Background, Inherit, Keyframe, RenderSettings, Timeline};
 
 /// A keyframe, by its timeline and frame.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,6 +25,20 @@ pub enum InfoChange {
     Tempo(f64),
     VideoSize(f64, f64),
 }
+
+/// Which group of settings of a timeline a key belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimelineSetting {
+    /// What the timeline takes over from its parent.
+    Inherit,
+    /// Rendering options.
+    Appearance,
+    /// One of [`TIMELINE_FLAGS`].
+    Flag,
+}
+
+/// Switches of a timeline itself, by their names in project files.
+pub const TIMELINE_FLAGS: &[&str] = &["lock", "lock_bend", "scale_resize", "hq_hiding", "lq_hiding", "wind", "wind_terrain"];
 
 /// How an edited value relates to the one already there.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -175,6 +189,48 @@ impl Project {
         });
     }
 
+    /// Changes a setting of timelines that is not animated
+    /// (`action_tl_inherit_*`, `action_tl_backfaces`, `action_tl_lock`, ...):
+    /// one of the inherit switches, an appearance option, or a flag of the
+    /// timeline itself. Returns whether the setting exists.
+    pub fn set_timeline_setting(&mut self, ids: &[SaveId], setting: TimelineSetting, key: &str, value: Json) -> bool {
+        let known = match setting {
+            TimelineSetting::Inherit => Inherit::KEYS.contains(&key),
+            TimelineSetting::Appearance => Appearance::KEYS.contains(&key),
+            TimelineSetting::Flag => TIMELINE_FLAGS.contains(&key),
+        };
+        if !known {
+            return false;
+        }
+        self.edit("Change timeline settings", None, |edit| {
+            for id in ids {
+                let Some(timeline) = edit.timeline(id) else { continue };
+                match setting {
+                    TimelineSetting::Inherit => {
+                        timeline.inherit.set_field(key, value.clone());
+                    }
+                    TimelineSetting::Appearance => {
+                        timeline.appearance.set_field(key, value.clone());
+                    }
+                    TimelineSetting::Flag => {
+                        let on = value.as_flag().unwrap_or(false);
+                        match key {
+                            "lock" => timeline.lock = on,
+                            "lock_bend" => timeline.lock_bend = on,
+                            "scale_resize" => timeline.scale_resize = on,
+                            "hq_hiding" => timeline.hq_hiding = on,
+                            "lq_hiding" => timeline.lq_hiding = on,
+                            "wind" => timeline.wind = on,
+                            "wind_terrain" => timeline.wind_terrain = on,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+        true
+    }
+
     /// Renames a timeline (`action_tl_name`).
     pub fn rename_timeline(&mut self, id: &SaveId, name: &str) {
         self.edit("Rename timeline", None, |edit| {
@@ -288,6 +344,24 @@ mod tests {
         project.undo();
         project.undo();
         assert_eq!(positions(&project), [0, 20]);
+    }
+
+    #[test]
+    fn timeline_settings_by_key() {
+        let mut project = project();
+        let id = [SaveId::new("CUBE")];
+        assert!(project.set_timeline_setting(&id, TimelineSetting::Inherit, "alpha", Json::Bool(true)));
+        assert!(project.set_timeline_setting(&id, TimelineSetting::Appearance, "backfaces", Json::Bool(true)));
+        assert!(project.set_timeline_setting(&id, TimelineSetting::Flag, "lock", Json::Bool(true)));
+        assert!(!project.set_timeline_setting(&id, TimelineSetting::Flag, "no_such_flag", Json::Bool(true)));
+        let cube = cube(&project);
+        assert!(cube.inherit.alpha && cube.appearance.backfaces && cube.lock);
+        project.undo();
+        project.undo();
+        project.undo();
+        let cube = self::cube(&project);
+        assert!(!cube.inherit.alpha && !cube.appearance.backfaces && !cube.lock);
+        assert!(!project.undo());
     }
 
     #[test]

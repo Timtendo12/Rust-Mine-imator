@@ -1,5 +1,67 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
-import type { FrameState, ProjectSummary, Settings, ValueEdit, ValueEntry, ValueGroup, Vec3 } from "./backend";
+import type {
+  FrameState,
+  ProjectSummary,
+  Settings,
+  TimelineSettingGroup,
+  TimelineSettings,
+  ValueEdit,
+  ValueEntry,
+  ValueGroup,
+  Vec3,
+} from "./backend";
+
+/** Switches of the timeline settings with their labels, by group. */
+const TIMELINE_SWITCHES: [TimelineSettingGroup, string, [string, string][]][] = [
+  [
+    "inherit",
+    "Inherit from parent",
+    [
+      ["position", "Position"],
+      ["rotation", "Rotation"],
+      ["scale", "Scale"],
+      ["alpha", "Alpha"],
+      ["color", "Color"],
+      ["texture", "Texture"],
+      ["surface", "Surface"],
+      ["subsurface", "Subsurface"],
+      ["visibility", "Visibility"],
+      ["bend", "Bend"],
+      ["rot_point", "Rotation point"],
+      ["glow_color", "Glow color"],
+      ["select", "Selection"],
+      ["pose", "Pose"],
+    ],
+  ],
+  [
+    "appearance",
+    "Appearance",
+    [
+      ["backfaces", "Show backfaces"],
+      ["texture_blur", "Blur texture"],
+      ["texture_filtering", "Texture filtering"],
+      ["shadows", "Cast shadows"],
+      ["ssao", "Ambient occlusion"],
+      ["glow", "Glow"],
+      ["glow_texture", "Glow uses texture"],
+      ["only_render_glow", "Only render glow"],
+      ["fog", "Affected by fog"],
+    ],
+  ],
+  [
+    "flags",
+    "Timeline",
+    [
+      ["lock", "Locked (cannot be clicked)"],
+      ["lq_hiding", "Hide in low quality"],
+      ["hq_hiding", "Hide in high quality"],
+      ["scale_resize", "Scale resizes children"],
+      ["lock_bend", "Follow the bent half"],
+      ["wind", "Wind"],
+      ["wind_terrain", "Wind on terrain"],
+    ],
+  ],
+];
 
 /** Groups of the frame editor that start opened. */
 const OPEN_GROUPS = new Set(["Position", "Rotation", "Scale", "Bend", "Color", "Light", "Camera", "Keyframe"]);
@@ -168,6 +230,9 @@ interface Props {
   /** Changes values of the selected timeline at the current frame. */
   /** The frame editor of the selected timeline. */
   values: ValueGroup[];
+  /** Settings of the selected timeline that are not animated. */
+  timelineSettings: TimelineSettings | null;
+  onSetTimelineSetting: (group: TimelineSettingGroup, key: string, value: unknown) => void;
   onEditValues: (values: ValueEdit[], mode: "set" | "add", merge: string | null) => void;
   onEditDone: () => void;
 }
@@ -175,6 +240,7 @@ interface Props {
 /** The properties panel on the right. */
 export function Properties(props: Props) {
   const { project, frame, selected, settings, values, onEditValues, onEditDone, onSetSetting, onSetInfo } = props;
+  const { timelineSettings, onSetTimelineSetting } = props;
   const [open, setOpen] = useState<Record<string, boolean>>({ project: true, selection: true });
   const toggle = (key: string) => setOpen((current) => ({ ...current, [key]: !current[key] }));
   // Which groups of the frame editor are open; kept while values refresh.
@@ -419,6 +485,33 @@ export function Properties(props: Props) {
                   </details>
                 );
               })}
+              {timelineSettings &&
+                TIMELINE_SWITCHES.map(([group, title, switches]) => {
+                  const map = timelineSettings[group];
+                  if (!map) return null;
+                  return (
+                    <details
+                      key={group}
+                      className="value-group"
+                      open={openGroups.has(title)}
+                      onToggle={(e) => {
+                        const isOpen = e.currentTarget.open;
+                        setOpenGroups((current) => {
+                          if (current.has(title) === isOpen) return current;
+                          const next = new Set(current);
+                          if (isOpen) next.add(title);
+                          else next.delete(title);
+                          return next;
+                        });
+                      }}
+                    >
+                      <summary>{title}</summary>
+                      {switches.map(([key, label]) => (
+                        <Toggle key={key} label={label} on={map[key] === true} onChange={(on) => onSetTimelineSetting(group, key, on)} />
+                      ))}
+                    </details>
+                  );
+                })}
               <Field label="Keyframes">{timeline.keyframes.length}</Field>
             </>
           ) : (
