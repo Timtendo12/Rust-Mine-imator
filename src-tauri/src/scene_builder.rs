@@ -295,16 +295,29 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
 }
 
 /// The camera a view looks through: the work camera, or the active camera
-/// timeline of the evaluated frame if the view asks for it and there is one.
-pub fn scene_camera(project: &Project, state: &mi_anim::SceneState, order: &[usize], view_camera: ViewCamera) -> Camera {
+/// timeline of the frame at `marker` (which `state` is evaluated at) if the
+/// view asks for it and there is one. A camera timeline may shake.
+pub fn scene_camera(
+    project: &Project,
+    state: &mi_anim::SceneState,
+    order: &[usize],
+    marker: f64,
+    view_camera: ViewCamera,
+) -> Camera {
     let far = project.file().render.distance as f32;
     let (ViewCamera::Work(work) | ViewCamera::Active(work)) = view_camera;
     let mut camera = work.camera(far);
     if matches!(view_camera, ViewCamera::Active(_)) {
         if let Some(active) = project.active_camera(state, order) {
             let node = order.iter().position(|&i| i == active).expect("the active camera is part of the scene");
-            let fov = state.nodes[node].values.number(ValueId::CamFov) as f32;
-            camera = Camera::from_matrix(&state.nodes[node].matrix.to_f32(), fov, far);
+            let values = &state.nodes[node].values;
+            let fov = values.number(ValueId::CamFov) as f32;
+            let seconds = marker / project.file().info.tempo.max(1.0);
+            let matrix = match mi_anim::camera_shake(values, seconds) {
+                Some(shake) => shake.then(&state.nodes[node].matrix),
+                None => state.nodes[node].matrix,
+            };
+            camera = Camera::from_matrix(&matrix.to_f32(), fov, far);
             camera.near = CLIP_NEAR;
         }
     }
@@ -336,7 +349,7 @@ pub fn build_scene(
     let bend_style = BendStyle::from_name(&render.bend_style);
 
     let far = render.distance as f32;
-    let camera = scene_camera(project, &state, &order, view_camera);
+    let camera = scene_camera(project, &state, &order, marker, view_camera);
 
     // Draw order: by depth, then tree order (`tl_update_depth`).
     let mut draw_order: Vec<usize> = (0..order.len()).collect();
@@ -849,6 +862,33 @@ mod tests {
         let ground = &scene.objects[0];
         assert_eq!(ground.model[12] % 16.0, 0.0);
         assert!((ground.model[12] - 1000.0).abs() <= 16.0 && (ground.model[13] + 500.0).abs() <= 16.0);
+    }
+
+    #[test]
+    fn a_shaking_camera_moves_with_time() {
+        let mut file = project().file().clone();
+        let cam = file.objects.timelines.iter_mut().find(|t| t.id == SaveId::new("CAM")).unwrap();
+        cam.default_values[ValueId::CamShake] = Value::Bool(true);
+        cam.default_values[ValueId::CamShakeStrengthX] = Value::Number(10.0);
+        let shaking = Project::from_file(file, IdGenerator::new(3)).0;
+        let camera_at = |project: &Project, marker: f64| {
+            let (state, order) = project.evaluate(marker);
+            scene_camera(project, &state, &order, marker, ViewCamera::Active(WorkCamera::default()))
+        };
+        let still = camera_at(&project(), 7.0);
+        let moved = camera_at(&shaking, 7.0);
+        // The default mode moves the camera; it keeps looking the same way.
+        assert!((moved.from - still.from).length() > 0.5, "{:?}", moved.from);
+        assert!(((moved.to - moved.from) - (still.to - still.from)).length() < 1e-4);
+        // It is a function of time: the same frame gives the same camera.
+        assert_eq!(camera_at(&shaking, 7.0), moved);
+        assert_ne!(camera_at(&shaking, 8.0).from, moved.from);
+        // The work camera never shakes.
+        let work = |project: &Project| {
+            let (state, order) = project.evaluate(7.0);
+            scene_camera(project, &state, &order, 7.0, ViewCamera::Work(WorkCamera::default()))
+        };
+        assert_eq!(work(&shaking), work(&project()));
     }
 
     fn pack() -> AssetPack {

@@ -78,7 +78,7 @@ Legend: **done** · **partial** · **not started**
 | Paths (spline sampling, frames) and path following | done |
 | Inherit pose | partial: implemented, not covered by a test yet |
 | Camera orbit | done |
-| Camera shake | not started |
+| Camera shake | done: the simplex noise of the original (`simplex_lib`), turning or moving the active camera |
 | Playback | partial: driven by the frontend clock; looping and regions not yet |
 
 ## Assets
@@ -118,7 +118,7 @@ Legend: **done** · **partial** · **not started**
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
 | Work camera: fly mode (right drag + keys) | not started |
 | Timeline cameras (active camera view, FOV, orbit) | done |
-| Camera shake | not started |
+| Camera shake | done |
 | Offscreen rendering with pixel readback | done (used by tests, thumbnails and export) |
 | High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | not started |
 | Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | not started |
