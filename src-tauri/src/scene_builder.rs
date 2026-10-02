@@ -154,6 +154,23 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
     object.emissive = inherited.emissive as f32;
 }
 
+/// The camera a view looks through: the work camera, or the active camera
+/// timeline of the evaluated frame if the view asks for it and there is one.
+pub fn scene_camera(project: &Project, state: &mi_anim::SceneState, order: &[usize], view_camera: ViewCamera) -> Camera {
+    let far = project.file().render.distance as f32;
+    let (ViewCamera::Work(work) | ViewCamera::Active(work)) = view_camera;
+    let mut camera = work.camera(far);
+    if matches!(view_camera, ViewCamera::Active(_)) {
+        if let Some(active) = project.active_camera(state, order) {
+            let node = order.iter().position(|&i| i == active).expect("the active camera is part of the scene");
+            let fov = state.nodes[node].values.number(ValueId::CamFov) as f32;
+            camera = Camera::from_matrix(&state.nodes[node].matrix.to_f32(), fov, far);
+            camera.near = CLIP_NEAR;
+        }
+    }
+    camera
+}
+
 /// Builds the scene of `project` at frame `marker`.
 ///
 /// Drawn so far: shapes, blocks, body parts of characters and special
@@ -178,18 +195,8 @@ pub fn build_scene(
     let timelines = project.timelines();
     let bend_style = BendStyle::from_name(&render.bend_style);
 
-    // Camera
     let far = render.distance as f32;
-    let (ViewCamera::Work(work) | ViewCamera::Active(work)) = view_camera;
-    let mut camera = work.camera(far);
-    if matches!(view_camera, ViewCamera::Active(_)) {
-        if let Some(active) = project.active_camera(&state, &order) {
-            let node = order.iter().position(|&i| i == active).expect("the active camera is part of the scene");
-            let fov = state.nodes[node].values.number(ValueId::CamFov) as f32;
-            camera = Camera::from_matrix(&state.nodes[node].matrix.to_f32(), fov, far);
-            camera.near = CLIP_NEAR;
-        }
-    }
+    let camera = scene_camera(project, &state, &order, view_camera);
 
     // Draw order: by depth, then tree order (`tl_update_depth`).
     let mut draw_order: Vec<usize> = (0..order.len()).collect();

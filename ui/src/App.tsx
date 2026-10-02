@@ -433,6 +433,9 @@ export function App() {
         <div className="stage">
           <Viewport
             selected={selected}
+            frame={frame}
+            onEditValues={editValues}
+            onEditDone={() => void finishEdit()}
             onPick={(id, keepSelection) => {
               if (id) {
                 setSelected(id);

@@ -297,3 +297,26 @@ export const timelineSettings = (id: string) => invoke<TimelineSettings | null>(
 
 export const setTimelineSetting = (timelines: string[], group: TimelineSettingGroup, key: string, value: unknown) =>
   invoke<Edited>("set_timeline_setting", { timelines, group, key, value });
+
+/** The controls of a timeline in the viewport, in physical pixels from its top left corner. */
+export interface Gizmo {
+  center: [number, number] | null;
+  move: {
+    /** The value the arrow changes, such as `POS_X`. */
+    value: string;
+    start: [number, number];
+    end: [number, number];
+    /** World units the arrow is long. */
+    length: number;
+    /** Scale of the parent along the axis. */
+    scale: number;
+  }[];
+  rotate: {
+    value: string;
+    points: [number, number][];
+    /** Seen from behind: the mouse turns it the other way. */
+    flip: boolean;
+  }[];
+}
+
+export const viewportGizmo = (id: string) => invoke<Gizmo>("viewport_gizmo", { id });

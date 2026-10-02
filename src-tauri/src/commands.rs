@@ -520,3 +520,21 @@ pub fn viewport_pick(
 pub fn set_selection(timelines: Vec<String>, state: State<'_, AppState>) {
     state.set_selection(timelines.iter().map(mi_core::SaveId::new).collect());
 }
+
+/// The move arrows and rotation rings of a timeline as the viewport shows
+/// them now, for the frontend to draw and drag.
+#[tauri::command]
+pub fn viewport_gizmo(id: String, state: State<'_, AppState>) -> Result<crate::gizmo::Gizmo, CommandError> {
+    use crate::scene_builder::{scene_camera, ViewCamera};
+    let view = state.view();
+    let Some(rect) = view.rect else { return Ok(Default::default()) };
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    let Some(index) = project.timeline_index(&mi_core::SaveId::new(&id)) else { return Ok(Default::default()) };
+    let (scene, order) = state.evaluate(project, view.marker);
+    let Some(node) = order.iter().position(|&i| i == index) else { return Ok(Default::default()) };
+    let view_camera =
+        if view.use_timeline_camera { ViewCamera::Active(view.work_camera) } else { ViewCamera::Work(view.work_camera) };
+    let camera = scene_camera(project, &scene, &order, view_camera);
+    Ok(crate::gizmo::gizmo(project.timelines()[index].kind, &scene.nodes[node], &camera, rect.width as f64, rect.height as f64))
+}

@@ -964,3 +964,58 @@ input.swatch-color {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Controls of the selection in the viewport */
+
+.viewport {
+  position: relative;
+}
+
+.gizmo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gizmo-control {
+  pointer-events: stroke;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.gizmo-control polygon {
+  pointer-events: fill;
+}
+
+.gizmo-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20px;
+}
+
+.gizmo-line {
+  fill: none;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.tool-switch {
+  display: flex;
+  margin-left: 8px;
+}
+
+.tool-switch button {
+  border-radius: 0;
+  background: var(--field);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.tool-switch button.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}

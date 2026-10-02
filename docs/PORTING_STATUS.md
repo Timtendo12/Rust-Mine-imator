@@ -114,7 +114,7 @@ Legend: **done** · **partial** · **not started**
 | Items | partial: item timelines from pack textures, flat or extruded pixel by pixel (`render_generate_item`, `vbuffer_add_pixels`), and a keyframe's custom item. Not yet: item sheets of resources, facing the camera, spinning and bouncing |
 | Paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
-| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. Not yet: gizmos, grid, overlays |
+| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. The selected timeline has the move arrows of `view_control_move` and the rotation rings of `view_control_rotate`, switched with the Move/Rotate tool; a drag is one undo step. Not yet: move planes, scale and bend controls, snapping, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
 | Work camera: fly mode (right drag + keys) | not started |
 | Timeline cameras (active camera view, FOV, orbit) | done |
