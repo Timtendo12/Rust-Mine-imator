@@ -17,6 +17,8 @@ pub enum CommandError {
     NoProject,
     #[error("{0}")]
     Invalid(String),
+    #[error("Could not write {path}: {reason}")]
+    Write { path: String, reason: String },
 }
 
 impl Serialize for CommandError {
@@ -227,19 +229,57 @@ pub fn close_project(state: State<'_, AppState>) {
     state.redraw();
 }
 
-/// Opens a project file and makes it the current project.
-#[tauri::command]
-pub fn open_project(path: String, app: AppHandle, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
-    let (project, warnings) = Project::open(Path::new(&path), ProjectContext::default())?;
-
-    // Remember it. Failing to do so is not a reason to refuse the project.
-    if let (Some(entry), (Some(data), home)) = (crate::recent::entry_for(&project), recent_dirs(&app)) {
+/// Puts a project at the top of the recent list (`recent_add`). Failing to
+/// do so is not a reason to refuse opening or saving the project.
+pub(crate) fn remember(app: &AppHandle, project: &Project) {
+    if let (Some(entry), (Some(data), home)) = (crate::recent::entry_for(project), recent_dirs(app)) {
         let mut list = crate::recent::load(&data, home.as_deref());
         list.add(entry);
         if let Err(error) = crate::recent::save(&data, &list) {
             eprintln!("Could not save the recent list: {error}");
         }
     }
+}
+
+/// Size of the picture of a project on the start screen
+/// (`recent_thumbnail_width`, `recent_thumbnail_height`).
+const THUMBNAIL_SIZE: (u32, u32) = (240, 180);
+
+/// Writes `thumbnail.png` next to the project file: the work camera's view
+/// in the low quality renderer, as the original does when saving.
+pub(crate) fn write_thumbnail(state: &AppState) {
+    let Some(folder) = state.project().as_ref().and_then(|p| p.folder().map(std::path::Path::to_owned)) else { return };
+    let Some(viewport) = state.viewport() else { return };
+    let (width, height) = THUMBNAIL_SIZE;
+    let Some(pixels) = viewport.render_image(width, height, false) else { return };
+    let path = folder.join("thumbnail.png");
+    if let Err(error) = image::save_buffer(&path, &pixels, width, height, image::ColorType::Rgba8) {
+        eprintln!("Could not write {}: {error}", path.display());
+    }
+}
+
+/// Renders the current frame at the project's video size and saves it as an
+/// image (`action_toolbar_exportimage_save`), through the active camera if
+/// the project has one.
+#[tauri::command]
+pub fn export_image(path: String, state: State<'_, AppState>) -> Result<(), CommandError> {
+    let (width, height) = {
+        let guard = state.project();
+        let info = &guard.as_ref().ok_or(CommandError::NoProject)?.file().info;
+        (info.video_width.max(1.0) as u32, info.video_height.max(1.0) as u32)
+    };
+    let failed = |reason: String| CommandError::Write { path: path.clone(), reason };
+    let viewport = state.viewport().ok_or_else(|| failed("the viewport is not running".into()))?;
+    let pixels = viewport.render_image(width, height, true).ok_or_else(|| failed("rendering failed".into()))?;
+    image::save_buffer(&path, &pixels, width, height, image::ColorType::Rgba8).map_err(|e| failed(e.to_string()))
+}
+
+/// Opens a project file and makes it the current project.
+#[tauri::command]
+pub fn open_project(path: String, app: AppHandle, state: State<'_, AppState>) -> Result<ProjectSummary, CommandError> {
+    let (project, warnings) = Project::open(Path::new(&path), ProjectContext::default())?;
+
+    remember(&app, &project);
 
     let summary = summarize(&project, state.language(), warnings);
     let work_camera = saved_work_camera(&project);

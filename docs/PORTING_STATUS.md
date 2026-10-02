@@ -16,7 +16,7 @@ Legend: **done** · **partial** · **not started**
 | 4 | Renderer (low quality) and viewport | partial (see below) |
 | 5 | Editor shell: docking, timeline, editors, workbench, undo | partial (see below) |
 | 6 | Renderer (high quality) and post effects | not started |
-| 7 | Particles, audio, export | not started |
+| 7 | Particles, audio, export | partial (see below) |
 | 8 | World import and remaining tools | not started |
 | 9 | Hardening and performance | not started |
 
@@ -130,7 +130,7 @@ Legend: **done** · **partial** · **not started**
 | Particle simulation (deterministic, seeded) | not started |
 | Particle editor | not started |
 | Audio decoding, playback, waveforms | not started |
-| Image export | not started |
+| Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
 | Image sequence and video export with audio | not started |
 
 ## User interface
@@ -147,7 +147,7 @@ Legend: **done** · **partial** · **not started**
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframe moving and removing; reparenting, markers, regions and audio clips not yet |
 | New project | done | File > New project (Ctrl+N), saved with save as |
-| Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Backups, autosave and the thumbnail are not written yet |
+| Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |
 | Properties tabs (project, render, library, background, resources) | not started | |
 | Template editor, timeline editor, frame editor | not started | |
 | Ground editor | not started | |

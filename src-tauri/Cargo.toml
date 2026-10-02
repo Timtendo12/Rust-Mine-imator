@@ -19,6 +19,7 @@ mi-core = { workspace = true }
 mi-format = { workspace = true }
 mi-mesh = { workspace = true }
 glam = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
 mi-project = { workspace = true }
 mi-render = { workspace = true }
 pollster = "0.4"
@@ -27,6 +28,3 @@ serde_json = { workspace = true }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 thiserror = { workspace = true }
-
-[dev-dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }

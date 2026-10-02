@@ -9,6 +9,7 @@ import {
   createTimeline,
   duplicateTimelines,
   evaluateFrame,
+  exportImage,
   finishEdit,
   moveKeyframes,
   newProject,
@@ -268,6 +269,19 @@ export function App() {
     else await saveAs();
   }, [project, run, saveAs]);
 
+  const doExportImage = useCallback(async () => {
+    const path = await save({
+      filters: [{ name: "PNG image", extensions: ["png"] }],
+      defaultPath: `${project?.name || "Untitled"}.png`,
+    });
+    if (typeof path !== "string") return;
+    try {
+      await exportImage(path);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [project]);
+
   /** Asks before throwing away unsaved changes. */
   const confirmDiscard = useCallback(async () => {
     if (!project?.changed) return true;
@@ -317,6 +331,11 @@ export function App() {
         void (event.shiftKey ? saveAs() : doSave());
         return;
       }
+      if (event.key === "F10") {
+        event.preventDefault();
+        void doExportImage();
+        return;
+      }
       if (typingInField()) return;
       if (ctrl && key === "z" && !event.shiftKey) {
         event.preventDefault();
@@ -339,7 +358,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew]);
+  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew, doExportImage]);
 
   if (!project) {
     return (
@@ -381,7 +400,7 @@ export function App() {
         },
       ],
     },
-    { title: "Render", items: [{ label: "Export image…" }, { label: "Export animation…" }] },
+    { title: "Render", items: [{ label: "Export image…", action: () => void doExportImage(), shortcut: "F10" }, { label: "Export animation…" }] },
     {
       title: "View",
       items: [

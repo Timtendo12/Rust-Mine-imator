@@ -155,12 +155,18 @@ pub fn redo(state: State<'_, AppState>) -> Result<Edited, CommandError> {
 
 /// Saves the project to its file, or to `path` when given (save as).
 #[tauri::command]
-pub fn save_project(path: Option<String>, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+pub fn save_project(path: Option<String>, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Edited, CommandError> {
     let (saved, edited) = change(&state, |p| match &path {
         Some(path) => p.save_as(Path::new(path)),
         None => p.save(),
     })?;
     saved?;
+    // As the original does on saving: a picture for the start screen and a
+    // place at the top of the recent list.
+    crate::commands::write_thumbnail(&state);
+    if let Some(project) = state.project().as_ref() {
+        crate::commands::remember(&app, project);
+    }
     Ok(edited)
 }
 

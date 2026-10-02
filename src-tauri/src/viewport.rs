@@ -44,6 +44,8 @@ enum Message {
     Resize(u32, u32),
     /// What is under a pixel of the viewport, leaving out some timelines.
     Pick { x: u32, y: u32, exclude: Vec<usize>, reply: Sender<Option<usize>> },
+    /// The scene as an image of the given size, as RGBA rows.
+    Image { width: u32, height: u32, timeline_camera: bool, reply: Sender<Option<Vec<u8>>> },
 }
 
 /// Handle for asking the render thread to do something. Cheap to clone.
@@ -62,6 +64,16 @@ impl ViewportHandle {
 
     pub fn resize(&self, width: u32, height: u32) {
         let _ = self.sender.send(Message::Resize(width, height));
+    }
+
+    /// Renders the current frame into an image: RGBA, top row first.
+    /// `timeline_camera` looks through the active camera timeline if there
+    /// is one, otherwise the work camera is used. The selection outline is
+    /// left out.
+    pub fn render_image(&self, width: u32, height: u32, timeline_camera: bool) -> Option<Vec<u8>> {
+        let (reply, answer) = mpsc::channel();
+        self.sender.send(Message::Image { width, height, timeline_camera, reply }).ok()?;
+        answer.recv_timeout(std::time::Duration::from_secs(60)).ok().flatten()
     }
 
     /// The timeline (by index) drawn at pixel (`x`, `y`) of the viewport,
@@ -193,7 +205,7 @@ impl RenderThread {
         };
         let color = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let (scene, rect) = self.scene();
+        let (scene, rect) = self.scene(None);
 
         match scene {
             Some(scene) => self.renderer.render(&color, &self.depth, rect, &scene, true),
@@ -224,19 +236,24 @@ impl RenderThread {
         self.renderer.submit(encoder);
     }
 
-    /// The scene as the view shows it now, and where on the window.
-    fn scene(&mut self) -> (Option<mi_render::RenderScene>, Viewport) {
+    /// The scene as the view shows it now, and where on the window. For an
+    /// exported image, `export_camera` says whether to look through the
+    /// timeline camera, and the selection is not outlined.
+    fn scene(&mut self, export_camera: Option<bool>) -> (Option<mi_render::RenderScene>, Viewport) {
         let state = self.window.state::<AppState>();
         let view = state.view();
         let full = Viewport { x: 0, y: 0, width: self.config.width, height: self.config.height };
         let rect = view.rect.map(|r| clamp_rect(r, full)).unwrap_or(full);
         let guard = state.project();
         let scene = guard.as_ref().map(|project| {
-            let camera =
-                if view.use_timeline_camera { ViewCamera::Active(view.work_camera) } else { ViewCamera::Work(view.work_camera) };
+            let camera = if export_camera.unwrap_or(view.use_timeline_camera) {
+                ViewCamera::Active(view.work_camera)
+            } else {
+                ViewCamera::Work(view.work_camera)
+            };
             let bindings = state.bindings();
             let scenery = state.scenery();
-            let selected = state.selection();
+            let selected = if export_camera.is_some() { Vec::new() } else { state.selection() };
             let inputs =
                 SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref(), selected: &selected };
             let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
@@ -245,8 +262,22 @@ impl RenderThread {
         (scene, rect)
     }
 
+    fn image(&mut self, width: u32, height: u32, timeline_camera: bool) -> Option<Vec<u8>> {
+        let (scene, _) = self.scene(Some(timeline_camera));
+        let scene = scene?;
+        let target = self.renderer.offscreen(width, height);
+        self.renderer.render(&target.color, &target.depth, target.viewport(), &scene, true);
+        match target.read_rgba() {
+            Ok(pixels) => Some(pixels),
+            Err(error) => {
+                eprintln!("viewport: rendering an image failed: {error}");
+                None
+            }
+        }
+    }
+
     fn pick(&mut self, x: u32, y: u32, exclude: &[usize]) -> Option<usize> {
-        let (scene, rect) = self.scene();
+        let (scene, rect) = self.scene(None);
         let mut scene = scene?;
         for object in &mut scene.objects {
             if object.pick != 0 && exclude.contains(&(object.pick as usize - 1)) {
@@ -275,6 +306,9 @@ impl RenderThread {
                     }
                     Message::Pick { x, y, exclude, reply } => {
                         let _ = reply.send(self.pick(x, y, &exclude));
+                    }
+                    Message::Image { width, height, timeline_camera, reply } => {
+                        let _ = reply.send(self.image(width, height, timeline_camera));
                     }
                 }
             }

@@ -122,6 +122,7 @@ pub enum TextureFilter {
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    target_format: wgpu::TextureFormat,
     pipeline_cull: wgpu::RenderPipeline,
     pipeline_two_sided: wgpu::RenderPipeline,
     pick_cull: wgpu::RenderPipeline,
@@ -438,6 +439,7 @@ impl Renderer {
         Self {
             device: device.clone(),
             queue: queue.clone(),
+            target_format,
             pipeline_cull,
             pipeline_two_sided,
             pick_cull,
@@ -462,6 +464,16 @@ impl Renderer {
             meshes: Vec::new(),
             free_meshes: Vec::new(),
         }
+    }
+
+    /// A target in memory that this renderer can draw into.
+    pub fn offscreen(&self, width: u32, height: u32) -> OffscreenTarget {
+        OffscreenTarget::new(&self.device, &self.queue, self, width, height)
+    }
+
+    /// The colour format of the targets this renderer draws into.
+    pub fn target_format(&self) -> wgpu::TextureFormat {
+        self.target_format
     }
 
     /// Uploads a mesh. Empty meshes are allowed and draw nothing.
@@ -868,6 +880,7 @@ pub struct OffscreenTarget {
     device: wgpu::Device,
     queue: wgpu::Queue,
     texture: wgpu::Texture,
+    format: wgpu::TextureFormat,
     pub color: wgpu::TextureView,
     pub depth: wgpu::TextureView,
     pub width: u32,
@@ -877,21 +890,24 @@ pub struct OffscreenTarget {
 impl OffscreenTarget {
     pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
+    /// A target in the renderer's own format, which may differ from
+    /// [`OffscreenTarget::FORMAT`] when the renderer draws to a window.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, renderer: &Renderer, width: u32, height: u32) -> Self {
         let (width, height) = (width.max(1), height.max(1));
+        let format = renderer.target_format();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen target"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::FORMAT,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let color = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let depth = renderer.create_depth_view(width, height);
-        Self { device: device.clone(), queue: queue.clone(), texture, color, depth, width, height }
+        Self { device: device.clone(), queue: queue.clone(), texture, format, color, depth, width, height }
     }
 
     pub fn viewport(&self) -> Viewport {
@@ -936,6 +952,12 @@ impl OffscreenTarget {
         let mut pixels = Vec::with_capacity((bytes_per_row * self.height) as usize);
         for row in data.chunks(padded as usize) {
             pixels.extend_from_slice(&row[..bytes_per_row as usize]);
+        }
+        // Window surfaces are usually BGRA.
+        if matches!(self.format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
+            for pixel in pixels.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
         }
         Ok(pixels)
     }

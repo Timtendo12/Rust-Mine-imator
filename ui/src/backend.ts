@@ -275,3 +275,6 @@ export const viewportPick = (x: number, y: number, exact: boolean, selected: str
 
 /** Tells the backend what is selected, so the viewport can outline it. */
 export const setSelection = (timelines: string[]) => invoke<void>("set_selection", { timelines });
+
+/** Renders the current frame at the project's size into an image file. */
+export const exportImage = (path: string) => invoke<void>("export_image", { path });

@@ -89,6 +89,7 @@ pub fn run() {
             commands::set_view_options,
             commands::viewport_pick,
             commands::set_selection,
+            commands::export_image,
             editing::set_timeline_values,
             editing::finish_edit,
             editing::move_keyframes,
