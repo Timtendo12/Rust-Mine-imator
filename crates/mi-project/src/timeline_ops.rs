@@ -4,8 +4,10 @@
 
 use crate::history::Edit;
 use crate::Project;
-use mi_core::{ObjRef, SaveId, TlType, Value, ValueId, ValueKind};
+use mi_assets::{ModelFile, ModelPart};
+use mi_core::{ObjRef, SaveId, TempType, TlType, Value, ValueId, ValueKind};
 use mi_format::project::{Template, Timeline};
+use mi_format::StateValue;
 use std::collections::{HashMap, HashSet};
 
 /// Where the work camera is, for new cameras to start from
@@ -64,7 +66,120 @@ fn parent_of(project: &Project, id: &SaveId) -> Option<SaveId> {
     project.tree().parent(index).map(|p| project.timelines()[p].id.clone())
 }
 
+/// A body part timeline for a part of a model (`tl_new_part`,
+/// `tl_value_spawn`).
+fn part_timeline(id: SaveId, part: &ModelPart, template: &SaveId, owner: &SaveId, edit: &Edit) -> Timeline {
+    let mut tl = Timeline::new(id, TlType::Bodypart, &edit.project().file.defaults);
+    tl.temp = ObjRef::Id(template.clone());
+    tl.part_of = ObjRef::Id(owner.clone());
+    tl.model_part_name = part.name.clone();
+    tl.inherit.alpha = true;
+    tl.inherit.color = true;
+    tl.inherit.texture = true;
+    tl.inherit.surface = true;
+    tl.inherit.subsurface = true;
+    tl.inherit.rot_point = true;
+    tl.scale_resize = false;
+    tl.lock_bend = part.lock_bend;
+    tl.appearance.backfaces = part.backfaces;
+    tl.depth = part.depth;
+    tl.lock = part.locked;
+    if let Some(bend) = &part.bend {
+        let v = &mut tl.default_values;
+        v[ValueId::BendAngleX] = Value::Number(bend.default_angle[0]);
+        v[ValueId::BendAngleY] = Value::Number(bend.default_angle[1]);
+        v[ValueId::BendAngleZ] = Value::Number(bend.default_angle[2]);
+        tl.inherit.bend = bend.inherit;
+    }
+    tl
+}
+
 impl Project {
+    /// Adds a character or special block with a timeline for each part of
+    /// its model (`temp_animate`, `tl_new_part`, `tl_update_part_list`).
+    /// Parts the state hides get no timeline; their children hang directly
+    /// below the model, as in the original.
+    pub fn create_model(
+        &mut self,
+        kind: TlType,
+        model_name: &str,
+        state: Vec<(String, StateValue)>,
+        file: &ModelFile,
+        hidden_parts: &[String],
+    ) -> Option<SaveId> {
+        let temp_kind = match kind {
+            TlType::Character => TempType::Character,
+            TlType::SpecialBlock => TempType::SpecialBlock,
+            _ => return None,
+        };
+        Some(self.edit("Create timeline", None, |edit| {
+            let mut template = Template::new(edit.new_id(), temp_kind);
+            template.model_name = model_name.to_owned();
+            template.model_state = state;
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let owner_id = edit.new_id();
+            let mut owner = Timeline::new(owner_id.clone(), kind, &edit.project().file.defaults);
+            owner.temp = ObjRef::Id(template_id.clone());
+            owner.parent = SaveId::root();
+            owner.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+
+            // Parts in the model's order, each under the nearest part above
+            // it that has a timeline.
+            let mut parts: Vec<Timeline> = Vec::new();
+            let mut children_count: HashMap<SaveId, i64> = HashMap::new();
+            let mut stack: Vec<(&ModelPart, SaveId)> = file.parts.iter().rev().map(|p| (p, owner_id.clone())).collect();
+            while let Some((part, parent)) = stack.pop() {
+                let below = if hidden_parts.contains(&part.name) {
+                    parent.clone()
+                } else {
+                    let mut tl = part_timeline(edit.new_id(), part, &template_id, &owner_id, edit);
+                    let count = children_count.entry(parent.clone()).or_insert(0);
+                    tl.parent = parent.clone();
+                    tl.parent_tree_index = Some(*count);
+                    *count += 1;
+                    let id = tl.id.clone();
+                    parts.push(tl);
+                    id
+                };
+                for child in part.parts.iter().rev() {
+                    stack.push((child, below.clone()));
+                }
+            }
+            owner.parts = Some(parts.iter().map(|p| ObjRef::Id(p.id.clone())).collect());
+
+            let mut end = edit.project().timelines().len();
+            edit.insert_timeline(end, owner);
+            for part in parts {
+                end += 1;
+                edit.insert_timeline(end, part);
+            }
+            owner_id
+        }))
+    }
+
+    /// Adds a block (`temp_animate` for block templates).
+    pub fn create_block(&mut self, block_name: &str, state: Vec<(String, StateValue)>) -> SaveId {
+        self.edit("Create timeline", None, |edit| {
+            let mut template = Template::new(edit.new_id(), TempType::Block);
+            template.block_name = block_name.to_owned();
+            template.block_state = state;
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let id = edit.new_id();
+            let mut timeline = Timeline::new(id.clone(), TlType::Block, &edit.project().file.defaults);
+            timeline.temp = ObjRef::Id(template_id);
+            timeline.appearance.texture_filtering = true;
+            timeline.parent = SaveId::root();
+            timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+            let end = edit.project().timelines().len();
+            edit.insert_timeline(end, timeline);
+            id
+        })
+    }
+
     /// Adds a timeline at the end of the root (`action_bench_create` for
     /// folders, cameras, lights and shapes). Shapes get a template of
     /// their own. Returns the new timeline's id.

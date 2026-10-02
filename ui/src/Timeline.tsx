@@ -1,24 +1,12 @@
-import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import type { CreatableKind, FrameState, KeyframeKey, ProjectSummary, TimelineSummary } from "./backend";
+import { Workbench } from "./Workbench";
 
 const ROW_HEIGHT = 24;
 const RULER_HEIGHT = 26;
 const MIN_FRAMES = 120;
 /** Space before frame 0 so that keyframes there are not cut off. */
 const PADDING = 10;
-
-/** What the create menu offers, in the workbench's order. */
-const CREATABLE: [CreatableKind, string][] = [
-  ["folder", "Folder"],
-  ["camera", "Camera"],
-  ["pointlight", "Point light"],
-  ["spotlight", "Spot light"],
-  ["cube", "Cube"],
-  ["cone", "Cone"],
-  ["cylinder", "Cylinder"],
-  ["sphere", "Sphere"],
-  ["surface", "Surface"],
-];
 
 /** Where a dragged timeline would land relative to the row under the pointer. */
 type DropZone = "before" | "into" | "after";
@@ -60,6 +48,8 @@ interface Props {
   onMoveDone: () => void;
   onRename: (id: string, name: string) => void;
   onCreate: (kind: CreatableKind) => void;
+  onCreateModel: (name: string) => void;
+  onCreateBlock: (name: string) => void;
   /** Moves a timeline under `parent` (the root for null) at `index`, or at the end. */
   onReparent: (id: string, parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -94,7 +84,14 @@ export function Timeline(props: Props) {
   const [zoom, setZoom] = useState(12);
   const [search, setSearch] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<DOMRect | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  // Keep the selected timeline in view, such as one just created.
+  useEffect(() => {
+    if (!selected) return;
+    list.current?.querySelector(`[data-timeline="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selected, project]);
   const rowDrag = useRef<RowDrag | null>(null);
   const [dropTarget, setDropTarget] = useState<RowDrag["target"]>(null);
 
@@ -268,27 +265,20 @@ export function Timeline(props: Props) {
       </div>
 
       <div className="timeline">
-        <div className="timeline-list">
+        <div className="timeline-list" ref={list}>
           <div className="timeline-search" style={{ height: RULER_HEIGHT }}>
             <input type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <button className="create-button" title="Create a timeline" onClick={() => setCreating(!creating)}>
+            <button className="create-button" title="Workbench: add something to the scene" onClick={(e) => setCreating(creating ? null : e.currentTarget.getBoundingClientRect())}>
               +
             </button>
             {creating && (
-              <div className="menu-list create-menu" role="menu" onPointerLeave={() => setCreating(false)}>
-                {CREATABLE.map(([kind, label]) => (
-                  <button
-                    key={kind}
-                    role="menuitem"
-                    onClick={() => {
-                      setCreating(false);
-                      props.onCreate(kind);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Workbench
+                anchor={creating}
+                onCreate={props.onCreate}
+                onCreateModel={props.onCreateModel}
+                onCreateBlock={props.onCreateBlock}
+                onClose={() => setCreating(null)}
+              />
             )}
           </div>
           {rows.map(({ timeline, index }) => {

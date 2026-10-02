@@ -208,3 +208,66 @@ pub fn reparent_timelines(
     let parent = parent.map(SaveId::new);
     Ok(change(&state, |p| p.reparent_timelines(&ids(&timelines), parent.as_ref(), index))?.1)
 }
+
+/// Something the workbench can create.
+#[derive(Debug, Serialize)]
+pub struct WorkbenchItem {
+    name: String,
+    /// Name in the user's language.
+    label: String,
+}
+
+/// What the workbench offers from the asset pack, sorted by label.
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchItems {
+    characters: Vec<WorkbenchItem>,
+    special_blocks: Vec<WorkbenchItem>,
+    blocks: Vec<WorkbenchItem>,
+}
+
+#[tauri::command]
+pub fn workbench_items(state: State<'_, AppState>) -> WorkbenchItems {
+    let Some(pack) = state.pack() else { return WorkbenchItems::default() };
+    let language = state.language();
+    let mut items = WorkbenchItems::default();
+    for name in pack.model_names() {
+        let Some(def) = pack.model(name) else { continue };
+        let item = WorkbenchItem { name: name.clone(), label: language.asset_name("model", name) };
+        if def.folder == "character" {
+            items.characters.push(item);
+        } else {
+            items.special_blocks.push(item);
+        }
+    }
+    let blocks = pack.blocks();
+    items.blocks = blocks.names().map(|n| WorkbenchItem { name: n.to_owned(), label: language.asset_name("block", n) }).collect();
+    for list in [&mut items.characters, &mut items.special_blocks, &mut items.blocks] {
+        list.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    }
+    items
+}
+
+/// Adds a character or special block of the asset pack in its default state.
+#[tauri::command]
+pub fn create_model(name: String, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let pack = state.pack().ok_or_else(|| CommandError::Invalid("the Minecraft assets are not loaded".into()))?;
+    let def = pack.model(&name).ok_or_else(|| CommandError::Invalid(format!("unknown model {name}")))?;
+    let kind = if def.folder == "character" { mi_core::TlType::Character } else { mi_core::TlType::SpecialBlock };
+    let model_state: Vec<(String, mi_format::StateValue)> =
+        def.default_state.iter().map(|(k, v)| (k.clone(), mi_format::StateValue::Str(v.clone()))).collect();
+    let resolved = pack.resolve(&name, &model_state).ok_or_else(|| CommandError::Invalid(format!("model {name} could not be loaded")))?;
+    let (id, edited) = change(&state, |p| p.create_model(kind, &name, model_state, &resolved.file, &resolved.hide))?;
+    Ok(Created { edited, created: id.into_iter().map(|i| i.to_string()).collect() })
+}
+
+/// Adds a block of the asset pack in its default state.
+#[tauri::command]
+pub fn create_block(name: String, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let pack = state.pack().ok_or_else(|| CommandError::Invalid("the Minecraft assets are not loaded".into()))?;
+    let def = pack.blocks().def(&name).ok_or_else(|| CommandError::Invalid(format!("unknown block {name}")))?;
+    let block_state: Vec<(String, mi_format::StateValue)> =
+        def.default_state.iter().map(|(k, v)| (k.clone(), mi_format::StateValue::Str(v.clone()))).collect();
+    let (id, edited) = change(&state, |p| p.create_block(&name, block_state))?;
+    Ok(Created { edited, created: vec![id.to_string()] })
+}

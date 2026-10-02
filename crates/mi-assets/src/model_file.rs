@@ -56,6 +56,8 @@ pub struct Bend {
     pub default_angle: Vec3,
     /// Resting angle including that of the parents it inherits from.
     pub inherit_angle: Vec3,
+    /// Whether the bend adds the parent part's bend (`inherit_bend`).
+    pub inherit: bool,
 }
 
 impl Bend {
@@ -408,6 +410,7 @@ fn load_bend(map: &JsonObject, scale: Vec3, parent: Option<&PartContext>) -> Res
         direction_max,
         default_angle,
         inherit_angle,
+        inherit: inherit_bend,
     })
 }
 

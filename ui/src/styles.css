@@ -810,11 +810,66 @@ input[type="range"] {
   line-height: 1;
 }
 
-.create-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 20;
+.workbench {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: 120px 220px;
+  height: 320px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.workbench-categories {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-right: 1px solid var(--border);
+}
+
+.workbench-categories button,
+.workbench-list button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workbench-categories button.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.workbench-categories button:hover,
+.workbench-list button:hover {
+  background: var(--accent-dim);
+}
+
+.workbench-items {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workbench-items input {
+  margin: 6px;
+}
+
+.workbench-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+.workbench-list .muted {
+  padding: 6px 12px;
 }
 
 .timeline-row.drop-into {

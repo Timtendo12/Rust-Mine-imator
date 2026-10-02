@@ -206,3 +206,24 @@ export const duplicateTimelines = (timelines: string[]) =>
 /** Moves timelines under `parent` (the root for null), at `index` among its children or at the end. */
 export const reparentTimelines = (timelines: string[], parent: string | null, index: number | null) =>
   invoke<Edited>("reparent_timelines", { timelines, parent, index });
+
+export interface WorkbenchItem {
+  name: string;
+  /** Name in the user's language. */
+  label: string;
+}
+
+export interface WorkbenchItems {
+  characters: WorkbenchItem[];
+  specialBlocks: WorkbenchItem[];
+  blocks: WorkbenchItem[];
+}
+
+/** What the workbench offers from the asset pack. */
+export const workbenchItems = () => invoke<WorkbenchItems>("workbench_items");
+
+/** Adds a character or special block in its default state. */
+export const createModel = (name: string) => invoke<Edited & { created: string[] }>("create_model", { name });
+
+/** Adds a block in its default state. */
+export const createBlock = (name: string) => invoke<Edited & { created: string[] }>("create_block", { name });

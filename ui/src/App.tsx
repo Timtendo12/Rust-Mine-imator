@@ -4,6 +4,8 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
   appInfo,
   closeProject,
+  createBlock,
+  createModel,
   createTimeline,
   duplicateTimelines,
   evaluateFrame,
@@ -183,8 +185,8 @@ export function App() {
   }, [deleteSelectedKeyframes, run, selected, selectedKeyframes]);
 
   const create = useCallback(
-    async (kind: CreatableKind) => {
-      const result = await run(() => createTimeline(kind));
+    async (make: () => Promise<Edited & { created: string[] }>) => {
+      const result = await run(make);
       const created = (result as (Edited & { created: string[] }) | null)?.created ?? [];
       if (created.length > 0) {
         setSelected(created[0]);
@@ -360,7 +362,9 @@ export function App() {
             onMoveDone={() => void finishEdit()}
             onRename={(id, name) => void run(() => renameTimeline(id, name))}
             onToggleHidden={(id, hidden) => void run(() => setTimelinesHidden([id], hidden))}
-            onCreate={(kind) => void create(kind)}
+            onCreate={(kind: CreatableKind) => void create(() => createTimeline(kind))}
+            onCreateModel={(name) => void create(() => createModel(name))}
+            onCreateBlock={(name) => void create(() => createBlock(name))}
             onReparent={(id, parent, index) => void run(() => reparentTimelines([id], parent, index))}
             onPlay={setPlaying}
           />

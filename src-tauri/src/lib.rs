@@ -96,7 +96,10 @@ pub fn run() {
             editing::create_timeline,
             editing::remove_timelines,
             editing::duplicate_timelines,
-            editing::reparent_timelines
+            editing::reparent_timelines,
+            editing::workbench_items,
+            editing::create_model,
+            editing::create_block
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");
