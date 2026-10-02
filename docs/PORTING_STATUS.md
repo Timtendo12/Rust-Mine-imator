@@ -11,7 +11,7 @@ Legend: **done** · **partial** · **not started**
 |---|---|---|
 | 0 | Repository, workspace, Tauri + React shell, docs | done |
 | 1 | Core tables and file formats | partial (see below) |
-| 2 | Animation: value evaluation, easing, hierarchy, matrices, bend, IK, paths | not started |
+| 2 | Animation: value evaluation, easing, hierarchy, matrices, bend, IK, paths | partial (see below) |
 | 3 | Assets: Minecraft pack, block and character models, atlases, schematics | not started |
 | 4 | Renderer (low quality) and viewport | not started |
 | 5 | Editor shell: docking, timeline, editors, workbench, undo | not started |
@@ -64,10 +64,12 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status |
 |---|---|
-| Transitions: linear, instant, bezier, 30 easing curves | not started |
-| Value interpolation rules and clamping | not started |
+| Transitions: linear, instant, bezier, 30 easing curves | done |
+| Value interpolation rules and clamping | done |
+| Keyframe lookup and per-timeline value evaluation, including seamless repeat | done |
+| Matrix and vector maths with the original conventions | done |
 | Hierarchy, inherit flags, value inheritance | not started |
-| Matrices (position, rotation, scale, rotation point) | not started |
+| Timeline matrices (position, rotation, scale, rotation point) | not started |
 | Body part bending | not started |
 | Inverse kinematics | not started |
 | Paths and path following | not started |

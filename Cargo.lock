@@ -1773,6 +1773,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-anim"
+version = "0.1.0"
+dependencies = [
+ "mi-core",
+ "mi-format",
+]
+
+[[package]]
 name = "mi-core"
 version = "0.1.0"
 dependencies = [

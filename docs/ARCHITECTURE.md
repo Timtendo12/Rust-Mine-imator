@@ -117,7 +117,7 @@ samples are in, and the frame goes to FFmpeg (mp4, mov, wmv with x264 and mixed 
 | `mi-core` | exists | Save ids, colours, the animatable value table, object type tables, format version numbers |
 | `mi-format` | exists (JSON project family) | File formats: read, write, upgrade old versions |
 | `mi-project` | planned | Project model on top of `mi-format`: object tree, references, commands and undo |
-| `mi-anim` | planned | Value evaluation, easing, hierarchy, matrices, bend, IK, paths |
+| `mi-anim` | exists (values and maths) | Value evaluation, easing, hierarchy, matrices, bend, IK, paths |
 | `mi-assets` | planned | Minecraft asset pack, block and character models, atlases, resource packs, NBT, schematics, scenery mesher |
 | `mi-world` | planned | World saves: `level.dat`, regions, chunks of every supported version, preview mesh |
 | `mi-particles` | planned | Deterministic particle simulation |

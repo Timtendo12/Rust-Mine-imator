@@ -1,0 +1,10 @@
+[package]
+name = "mi-anim"
+description = "Animation evaluation for Mine-imator: easing, keyframe interpolation and transforms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mi-core = { workspace = true }
+mi-format = { workspace = true }
