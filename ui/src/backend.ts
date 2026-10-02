@@ -245,3 +245,11 @@ export const setProjectInfo = (field: "name" | "author" | "description" | "tempo
 
 /** Starts an empty project. */
 export const newProject = () => invoke<ProjectSummary>("new_project");
+
+/**
+ * The timeline a click at (x, y) of the viewport selects, in physical pixels
+ * from its top left corner; null when the click hits nothing. `exact` (Ctrl)
+ * picks the clicked part itself instead of the outermost timeline above it.
+ */
+export const viewportPick = (x: number, y: number, exact: boolean, selected: string | null) =>
+  invoke<string | null>("viewport_pick", { x, y, exact, selected });

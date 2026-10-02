@@ -12,6 +12,9 @@ use wgpu::util::DeviceExt;
 /// Depth buffer format used by all passes.
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// Format of the pick pass: one object id per pixel.
+const PICK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
+
 /// Maximum number of point lights in the shaded mode (the sun is separate).
 pub const MAX_POINT_LIGHTS: usize = 63;
 
@@ -67,7 +70,7 @@ impl ObjectUniform {
             hsb_mul: colors.map_or([1.0; 4], |c| rgb(c.hsb_mul, 1.0)),
             mix_color: colors.map_or([0.0; 4], |c| rgb(c.mix_color, c.mix_percent)),
             material: [object.metallic, object.roughness, object.emissive, colors.is_some() as u8 as f32],
-            flags: [object.unlit as u8 as f32, object.sun_only as u8 as f32, object.fog as u8 as f32, 0.0],
+            flags: [object.unlit as u8 as f32, object.sun_only as u8 as f32, object.fog as u8 as f32, object.pick as f32],
         }
     }
 }
@@ -91,6 +94,10 @@ pub struct Renderer {
     queue: wgpu::Queue,
     pipeline_cull: wgpu::RenderPipeline,
     pipeline_two_sided: wgpu::RenderPipeline,
+    pick_cull: wgpu::RenderPipeline,
+    pick_two_sided: wgpu::RenderPipeline,
+    /// 1×1 targets of the pick pass and the buffer it is read into.
+    pick_target: (wgpu::Texture, wgpu::TextureView, wgpu::TextureView, wgpu::Buffer),
     frame_buffer: wgpu::Buffer,
     frame_bind: wgpu::BindGroup,
     object_layout: wgpu::BindGroupLayout,
@@ -231,12 +238,21 @@ impl Renderer {
         });
 
         let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4];
-        let pipeline = |cull_mode: Option<wgpu::Face>, label: &str| {
+        let pick_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("pick shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/pick.wgsl").into()),
+        });
+        let pipeline = |cull_mode: Option<wgpu::Face>, label: &str, picking: bool| {
+            let (shader, format, blend) = if picking {
+                (&pick_shader, PICK_FORMAT, None)
+            } else {
+                (&shader, target_format, Some(wgpu::BlendState::ALPHA_BLENDING))
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
+                    module: shader,
                     entry_point: Some("vs_main"),
                     compilation_options: Default::default(),
                     buffers: &[wgpu::VertexBufferLayout {
@@ -261,21 +277,48 @@ impl Renderer {
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
-                    module: &shader,
+                    module: shader,
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: target_format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
+                    targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
                 }),
                 multiview: None,
                 cache: None,
             })
         };
-        let pipeline_cull = pipeline(Some(wgpu::Face::Back), "world, culled");
-        let pipeline_two_sided = pipeline(None, "world, two-sided");
+        let pipeline_cull = pipeline(Some(wgpu::Face::Back), "world, culled", false);
+        let pipeline_two_sided = pipeline(None, "world, two-sided", false);
+        let pick_cull = pipeline(Some(wgpu::Face::Back), "pick, culled", true);
+        let pick_two_sided = pipeline(None, "pick, two-sided", true);
+        let pick_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pick target"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: PICK_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let pick_view = pick_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let pick_depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("pick depth"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let pick_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pick readback"),
+            size: wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("frame uniforms"),
@@ -301,6 +344,9 @@ impl Renderer {
             queue: queue.clone(),
             pipeline_cull,
             pipeline_two_sided,
+            pick_cull,
+            pick_two_sided,
+            pick_target: (pick_texture, pick_view, pick_depth, pick_buffer),
             frame_buffer,
             frame_bind,
             object_layout,
@@ -409,6 +455,113 @@ impl Renderer {
         }
     }
 
+    /// Writes the uniforms of the objects that can be drawn (known, non-empty
+    /// meshes) and are accepted by `keep`, and returns them in that order.
+    fn upload_objects<'s>(&mut self, scene: &'s RenderScene, keep: impl Fn(&RenderObject) -> bool) -> Vec<&'s RenderObject> {
+        let drawable: Vec<&RenderObject> = scene
+            .objects
+            .iter()
+            .filter(|o| keep(o) && self.meshes.get(o.mesh.0).and_then(Option::as_ref).is_some_and(|m| m.vertex_count > 0))
+            .collect();
+
+        if drawable.len() > self.object_capacity {
+            self.object_capacity = drawable.len().next_power_of_two();
+            (self.object_buffer, self.object_bind) =
+                object_buffer(&self.device, &self.object_layout, self.object_stride, self.object_capacity);
+        }
+        let mut uniforms = vec![0u8; drawable.len() * self.object_stride as usize];
+        for (i, object) in drawable.iter().enumerate() {
+            let start = i * self.object_stride as usize;
+            uniforms[start..start + size_of::<ObjectUniform>()].copy_from_slice(bytemuck::bytes_of(&ObjectUniform::new(object)));
+        }
+        if !uniforms.is_empty() {
+            self.queue.write_buffer(&self.object_buffer, 0, &uniforms);
+        }
+        drawable
+    }
+
+    /// What is under pixel (`x`, `y`) of a viewport of `width` × `height`
+    /// pixels showing `scene`: the pick id of the nearest object there, or
+    /// `None` for nothing (or the ground).
+    pub fn pick(&mut self, scene: &RenderScene, width: u32, height: u32, x: u32, y: u32) -> Result<Option<u32>, GpuError> {
+        if width == 0 || height == 0 || x >= width || y >= height {
+            return Ok(None);
+        }
+        let aspect = width as f32 / height as f32;
+        let mut frame = Self::frame_uniform(scene, aspect);
+        // Stretch the projection so that the pixel fills the 1×1 target.
+        let (w, h) = (width as f32, height as f32);
+        let cx = 2.0 * (x as f32 + 0.5) / w - 1.0;
+        let cy = 1.0 - 2.0 * (y as f32 + 0.5) / h;
+        let crop = glam::Mat4::from_cols(
+            glam::Vec4::new(w, 0.0, 0.0, 0.0),
+            glam::Vec4::new(0.0, h, 0.0, 0.0),
+            glam::Vec4::new(0.0, 0.0, 1.0, 0.0),
+            glam::Vec4::new(-cx * w, -cy * h, 0.0, 1.0),
+        );
+        frame.view_proj = (crop * glam::Mat4::from_cols_array(&frame.view_proj)).to_cols_array();
+        self.queue.write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&frame));
+        let drawable = self.upload_objects(scene, |o| o.pick != 0);
+
+        let (texture, view, depth, buffer) = &self.pick_target;
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pick") });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("pick"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_bind_group(0, &self.frame_bind, &[]);
+            for (i, object) in drawable.iter().enumerate() {
+                let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
+                let pipeline = if object.backfaces { &self.pick_two_sided } else { &self.pick_cull };
+                let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(1, &self.object_bind, &[(i as u64 * self.object_stride) as u32]);
+                pass.set_bind_group(2, texture, &[]);
+                pass.set_vertex_buffer(0, mesh.buffer.slice(..));
+                pass.draw(0..mesh.vertex_count, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
+                    rows_per_image: Some(1),
+                },
+            },
+            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer.slice(..4).map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device.poll(wgpu::PollType::Wait).map_err(|e| GpuError::Readback(e.to_string()))?;
+        receiver.recv().map_err(|e| GpuError::Readback(e.to_string()))?.map_err(|e| GpuError::Readback(e.to_string()))?;
+        let id = {
+            let data = buffer.slice(..4).get_mapped_range();
+            u32::from_le_bytes([data[0], data[1], data[2], data[3]])
+        };
+        buffer.unmap();
+        Ok((id != 0).then_some(id))
+    }
+
     /// Draws `scene` into `viewport` of the target and submits the work.
     ///
     /// With `clear` the whole target is first cleared to the sky colour and
@@ -429,26 +582,7 @@ impl Renderer {
         let aspect = viewport.width as f32 / viewport.height as f32;
         self.queue.write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&Self::frame_uniform(scene, aspect)));
 
-        // Objects whose mesh is unknown or empty are skipped.
-        let drawable: Vec<&RenderObject> = scene
-            .objects
-            .iter()
-            .filter(|o| self.meshes.get(o.mesh.0).and_then(Option::as_ref).is_some_and(|m| m.vertex_count > 0))
-            .collect();
-
-        if drawable.len() > self.object_capacity {
-            self.object_capacity = drawable.len().next_power_of_two();
-            (self.object_buffer, self.object_bind) =
-                object_buffer(&self.device, &self.object_layout, self.object_stride, self.object_capacity);
-        }
-        let mut uniforms = vec![0u8; drawable.len() * self.object_stride as usize];
-        for (i, object) in drawable.iter().enumerate() {
-            let start = i * self.object_stride as usize;
-            uniforms[start..start + size_of::<ObjectUniform>()].copy_from_slice(bytemuck::bytes_of(&ObjectUniform::new(object)));
-        }
-        if !uniforms.is_empty() {
-            self.queue.write_buffer(&self.object_buffer, 0, &uniforms);
-        }
+        let drawable = self.upload_objects(scene, |o| !o.pick_only);
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("world") });
         {

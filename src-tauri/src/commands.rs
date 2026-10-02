@@ -429,3 +429,47 @@ mod tests {
         assert_eq!(frame.timelines[2].scale, [1.0, 1.0, 1.0]);
     }
 }
+
+/// What a click at (`x`, `y`) of the viewport (physical pixels from its top
+/// left corner) selects (`view_click`): the clicked timeline, or with
+/// nothing selected yet and without `exact` (Ctrl) its outermost unlocked
+/// ancestor. Selected and locked timelines let clicks through to what is
+/// behind them. `None` means the click hit nothing.
+#[tauri::command]
+pub fn viewport_pick(
+    x: f64,
+    y: f64,
+    exact: bool,
+    selected: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, CommandError> {
+    let exclude: Vec<usize> = {
+        let guard = state.project();
+        let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+        project
+            .timelines()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.lock || selected.as_deref() == Some(t.id.as_str()))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let Some(viewport) = state.viewport() else { return Ok(None) };
+    // The project must not be locked while the render thread draws the pick.
+    let Some(mut index) = viewport.pick(x.max(0.0) as u32, y.max(0.0) as u32, exclude) else { return Ok(None) };
+
+    let guard = state.project();
+    let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+    if index >= project.timelines().len() {
+        return Ok(None);
+    }
+    if selected.is_none() && !exact {
+        while let Some(parent) = project.tree().parent(index) {
+            if project.timelines()[parent].lock {
+                break;
+            }
+            index = parent;
+        }
+    }
+    Ok(Some(project.timelines()[index].id.to_string()))
+}

@@ -376,7 +376,17 @@ export function App() {
       )}
       <div className="editor">
         <div className="stage">
-          <Viewport />
+          <Viewport
+            selected={selected}
+            onPick={(id, keepSelection) => {
+              if (id) {
+                setSelected(id);
+                setSelectedKeyframes([]);
+              } else if (!keepSelection) {
+                setSelected(null);
+              }
+            }}
+          />
           <Timeline
             project={project}
             frame={frame}

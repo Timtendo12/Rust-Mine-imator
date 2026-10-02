@@ -42,6 +42,8 @@ impl Default for ViewState {
 enum Message {
     Redraw,
     Resize(u32, u32),
+    /// What is under a pixel of the viewport, leaving out some timelines.
+    Pick { x: u32, y: u32, exclude: Vec<usize>, reply: Sender<Option<usize>> },
 }
 
 /// Handle for asking the render thread to do something. Cheap to clone.
@@ -60,6 +62,14 @@ impl ViewportHandle {
 
     pub fn resize(&self, width: u32, height: u32) {
         let _ = self.sender.send(Message::Resize(width, height));
+    }
+
+    /// The timeline (by index) drawn at pixel (`x`, `y`) of the viewport,
+    /// ignoring those in `exclude`. Waits for the render thread.
+    pub fn pick(&self, x: u32, y: u32, exclude: Vec<usize>) -> Option<usize> {
+        let (reply, answer) = mpsc::channel();
+        self.sender.send(Message::Pick { x, y, exclude, reply }).ok()?;
+        answer.recv_timeout(std::time::Duration::from_secs(5)).ok().flatten()
     }
 }
 
@@ -172,26 +182,7 @@ impl RenderThread {
         };
         let color = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let state = self.window.state::<AppState>();
-        let view = state.view();
-        let full = Viewport { x: 0, y: 0, width: self.config.width, height: self.config.height };
-        let rect = view.rect.map(|r| clamp_rect(r, full)).unwrap_or(full);
-
-        let scene = {
-            let guard = state.project();
-            guard.as_ref().map(|project| {
-                let camera = if view.use_timeline_camera {
-                    ViewCamera::Active(view.work_camera)
-                } else {
-                    ViewCamera::Work(view.work_camera)
-                };
-                let bindings = state.bindings();
-                let scenery = state.scenery();
-                let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref() };
-                let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
-                build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
-            })
-        };
+        let (scene, rect) = self.scene();
 
         match scene {
             Some(scene) => self.renderer.render(&color, &self.depth, rect, &scene, true),
@@ -222,6 +213,42 @@ impl RenderThread {
         self.renderer.submit(encoder);
     }
 
+    /// The scene as the view shows it now, and where on the window.
+    fn scene(&mut self) -> (Option<mi_render::RenderScene>, Viewport) {
+        let state = self.window.state::<AppState>();
+        let view = state.view();
+        let full = Viewport { x: 0, y: 0, width: self.config.width, height: self.config.height };
+        let rect = view.rect.map(|r| clamp_rect(r, full)).unwrap_or(full);
+        let guard = state.project();
+        let scene = guard.as_ref().map(|project| {
+            let camera =
+                if view.use_timeline_camera { ViewCamera::Active(view.work_camera) } else { ViewCamera::Work(view.work_camera) };
+            let bindings = state.bindings();
+            let scenery = state.scenery();
+            let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref() };
+            let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
+            build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
+        });
+        (scene, rect)
+    }
+
+    fn pick(&mut self, x: u32, y: u32, exclude: &[usize]) -> Option<usize> {
+        let (scene, rect) = self.scene();
+        let mut scene = scene?;
+        for object in &mut scene.objects {
+            if object.pick != 0 && exclude.contains(&(object.pick as usize - 1)) {
+                object.pick = 0;
+            }
+        }
+        match self.renderer.pick(&scene, rect.width, rect.height, x, y) {
+            Ok(id) => id.map(|id| id as usize - 1),
+            Err(error) => {
+                eprintln!("viewport: picking failed: {error}");
+                None
+            }
+        }
+    }
+
     fn run(mut self, receiver: Receiver<Message>) {
         while let Ok(first) = receiver.recv() {
             // Handle everything that queued up, then draw once.
@@ -232,6 +259,9 @@ impl RenderThread {
                     Message::Resize(width, height) => {
                         self.resize(width, height);
                         redraw = true;
+                    }
+                    Message::Pick { x, y, exclude, reply } => {
+                        let _ = reply.send(self.pick(x, y, &exclude));
                     }
                 }
             }

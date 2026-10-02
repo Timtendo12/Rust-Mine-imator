@@ -241,3 +241,35 @@ fn many_objects_grow_the_uniform_buffer() {
     let image = render(&gpu, &mut renderer, &scene(objects));
     assert_eq!(centre(&image), [255, 0, 0, 255]);
 }
+
+#[test]
+fn picking_finds_the_nearest_object_under_a_pixel() {
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+    // The world is left-handed: looking along +Y, +X is on the left.
+    let mut left = flat(cube, translation(12.0, 0.0, 0.0), [1.0; 4]);
+    left.pick = 7;
+    let mut right = flat(cube, translation(-12.0, 0.0, 0.0), [1.0; 4]);
+    right.pick = 9;
+    // The ground and other unselectable objects are not picked.
+    let mut behind = flat(cube, translation(0.0, 40.0, 0.0), [1.0; 4]);
+    behind.pick = 0;
+    let s = scene(vec![left, right, behind]);
+
+    let pick = |renderer: &mut Renderer, x, y| renderer.pick(&s, SIZE, SIZE, x, y).unwrap();
+    assert_eq!(pick(&mut renderer, SIZE / 2 - 31, SIZE / 2), Some(7));
+    assert_eq!(pick(&mut renderer, SIZE / 2 + 31, SIZE / 2), Some(9));
+    assert_eq!(pick(&mut renderer, SIZE / 2, SIZE / 2), None);
+    assert_eq!(pick(&mut renderer, 0, 0), None);
+    assert_eq!(pick(&mut renderer, SIZE, 0), None);
+
+    // Of two objects under the same pixel the nearer wins, in any order.
+    let mut near = flat(cube, translation(0.0, -20.0, 0.0), [1.0; 4]);
+    near.pick = 1;
+    let mut far = flat(cube, translation(0.0, 20.0, 0.0), [1.0; 4]);
+    far.pick = 2;
+    for objects in [vec![near.clone(), far.clone()], vec![far, near]] {
+        let s = scene(objects);
+        assert_eq!(renderer.pick(&s, SIZE, SIZE, SIZE / 2, SIZE / 2).unwrap(), Some(1));
+    }
+}

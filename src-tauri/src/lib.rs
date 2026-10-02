@@ -84,6 +84,7 @@ pub fn run() {
             commands::viewport_zoom,
             commands::viewport_reset_camera,
             commands::set_view_options,
+            commands::viewport_pick,
             editing::set_timeline_values,
             editing::finish_edit,
             editing::move_keyframes,

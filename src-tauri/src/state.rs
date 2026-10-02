@@ -131,6 +131,11 @@ impl AppState {
         *lock(&self.bindings) = bindings;
     }
 
+    /// The viewport, once it runs.
+    pub fn viewport(&self) -> Option<&ViewportHandle> {
+        self.viewport.get()
+    }
+
     /// Registers the viewport once it has been created.
     pub fn set_viewport(&self, handle: ViewportHandle) {
         // Set once at startup; a second call would be a programming error

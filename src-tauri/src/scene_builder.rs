@@ -222,16 +222,34 @@ pub fn build_scene(
         if timeline.hide || !inherited.visible || timeline.lq_hiding {
             continue;
         }
+        // Everything drawn for this timeline picks it.
+        let first_object = objects.len();
 
         match timeline.kind {
-            TlType::PointLight | TlType::SpotLight => {
-                let color = rgb(node.values[ValueId::LightColor].as_color().unwrap_or(Color::WHITE));
-                let strength = node.values.number(ValueId::LightStrength) as f32;
-                lights.push(PointLight {
-                    position: node.world_pos.map(|v| v as f32),
-                    range: node.values.number(ValueId::LightRange) as f32,
-                    color: color.map(|c| c * strength),
-                });
+            TlType::PointLight | TlType::SpotLight | TlType::Camera => {
+                // Lights and cameras are clicked by a box around them.
+                let mesh = resources.mesh("clickbox".to_owned(), &|| shape_mesh(Shape::Cube, &ShapeSettings::default()));
+                let size = CLICK_BOX_SIZE / 16.0;
+                let p = node.world_pos.map(|v| v as f32);
+                let model = glam::Mat4::from_scale_rotation_translation(
+                    glam::Vec3::splat(size),
+                    glam::Quat::IDENTITY,
+                    glam::Vec3::new(p[0], p[1], p[2]),
+                );
+                let mut click = RenderObject::new(mesh, model.to_cols_array());
+                click.pick_only = true;
+                click.backfaces = true;
+                click.unlit = unlit;
+                objects.push(click);
+                if timeline.kind != TlType::Camera {
+                    let color = rgb(node.values[ValueId::LightColor].as_color().unwrap_or(Color::WHITE));
+                    let strength = node.values.number(ValueId::LightStrength) as f32;
+                    lights.push(PointLight {
+                        position: node.world_pos.map(|v| v as f32),
+                        range: node.values.number(ValueId::LightRange) as f32,
+                        color: color.map(|c| c * strength),
+                    });
+                }
             }
             kind if kind.is_shape() => {
                 let template = match &timeline.temp {
@@ -366,6 +384,9 @@ pub fn build_scene(
             }
             _ => {}
         }
+        for object in &mut objects[first_object..] {
+            object.pick = order[node_index] as u32 + 1;
+        }
     }
 
     let lighting = sky_settings(background, render.distance).lighting();
@@ -391,6 +412,9 @@ pub fn build_scene(
         objects,
     }
 }
+
+/// Size of the box lights and cameras are clicked by (`view_3d_box_size`).
+const CLICK_BOX_SIZE: f32 = 12.0;
 
 /// Largest repeat count along one axis of a block template.
 const MAX_BLOCK_REPEAT: f64 = 256.0;
@@ -527,12 +551,20 @@ mod tests {
         let project = project();
         let (scene, keys) = build(&project, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
 
-        // Ground plus the one visible sphere with a template.
-        assert_eq!(scene.objects.len(), 2);
+        // Ground plus the one visible sphere with a template; the lamp and
+        // the camera are only there to be clicked.
+        let drawn: Vec<&RenderObject> = scene.objects.iter().filter(|o| !o.pick_only).collect();
+        assert_eq!(drawn.len(), 2);
+        assert_eq!(scene.objects.iter().filter(|o| o.pick_only).count(), 2);
         assert!(keys[0].starts_with("ground:"));
         assert!(keys[1].starts_with("shape:Sphere") && keys[1].contains("detail: 12"), "{}", keys[1]);
-        assert!(scene.objects[0].sun_only);
-        let ball = &scene.objects[1];
+        assert!(drawn[0].sun_only);
+        let ball = drawn[1];
+        // Clicking it picks its timeline (index + 1); the ground picks nothing.
+        assert_eq!((drawn[0].pick, ball.pick), (0, 1));
+        let lamp_box = scene.objects.iter().find(|o| o.pick == 5).unwrap();
+        assert!(lamp_box.pick_only);
+        assert_eq!(lamp_box.model[12], 50.0);
         assert_eq!(ball.blend_color, [1.0, 0.0, 0.0, 0.5]);
         // Shapes are lifted by their rotation point so they stand on
         // their position.
@@ -571,7 +603,7 @@ mod tests {
         file.background.ground_show = false;
         let hidden = Project::from_file(file, IdGenerator::new(3)).0;
         let (scene, _) = build(&hidden, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
-        assert_eq!(scene.objects.len(), 1);
+        assert_eq!(scene.objects.iter().filter(|o| !o.pick_only).count(), 1);
 
         let far_away = WorkCamera::orbiting(glam::Vec3::new(1000.0, -500.0, 0.0), 0.0, 0.0, 0.0, 1.0);
         let (scene, _) = build(&project(), ViewCamera::Work(far_away), ViewMode::Shaded);

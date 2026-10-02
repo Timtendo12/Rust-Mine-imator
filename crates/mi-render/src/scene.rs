@@ -63,6 +63,11 @@ pub struct RenderObject {
     pub fog: bool,
     /// Draw both sides of every triangle.
     pub backfaces: bool,
+    /// What clicking the object picks; 0 for nothing (the ground). Below
+    /// 2^24, as it travels through a float.
+    pub pick: u32,
+    /// Only there to be clicked (the boxes of lights and cameras).
+    pub pick_only: bool,
 }
 
 impl RenderObject {
@@ -81,6 +86,8 @@ impl RenderObject {
             sun_only: false,
             fog: true,
             backfaces: false,
+            pick: 0,
+            pick_only: false,
         }
     }
 }
