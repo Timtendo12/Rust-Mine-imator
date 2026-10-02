@@ -1,0 +1,14 @@
+[package]
+name = "mi-format"
+description = "Readers and writers for Mine-imator file formats"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mi-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }

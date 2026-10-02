@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.zip binary
+*.ttf binary
+*.schematic binary
+*.midata -text
+*.miparticles -text
+*.mirender -text
+*.milanguage -text

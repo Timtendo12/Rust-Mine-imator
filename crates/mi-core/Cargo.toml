@@ -1,0 +1,10 @@
+[package]
+name = "mi-core"
+description = "Shared primitives for Mine-imator: ids, colours, animatable values and type tables"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
