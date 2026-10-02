@@ -186,8 +186,13 @@ export const timelineValues = (id: string) => invoke<ValueGroup[]>("timeline_val
  * each starts from the values before the first, so a drag sends its total
  * offset with mode "add".
  */
-export const setTimelineValues = (timelines: string[], values: ValueEdit[], mode: "set" | "add", merge: string | null = null) =>
-  invoke<Edited>("set_timeline_values", { timelines, values, mode, merge });
+export const setTimelineValues = (
+  timelines: string[],
+  keyframes: KeyframeKey[],
+  values: ValueEdit[],
+  mode: "set" | "add",
+  merge: string | null = null,
+) => invoke<Edited>("set_timeline_values", { timelines, keyframes, values, mode, merge });
 
 /** Ends a drag, so the next edit is an undo step of its own. */
 export const finishEdit = () => invoke<void>("finish_edit");
@@ -197,6 +202,17 @@ export const moveKeyframes = (keys: KeyframeKey[], offset: number, merge: string
   invoke<Edited & { moved: KeyframeKey[] }>("move_keyframes", { keys, offset, merge });
 
 export const removeKeyframes = (keys: KeyframeKey[]) => invoke<Edited>("remove_keyframes", { keys });
+
+/** Adds a keyframe at the current frame to the timelines that have none there. */
+export const createKeyframes = (timelines: string[]) =>
+  invoke<Edited & { keys: KeyframeKey[] }>("create_keyframes", { timelines });
+
+/** Copies keyframes to paste later; `cut` also removes them. */
+export const copyKeyframes = (keys: KeyframeKey[], cut: boolean) => invoke<Edited>("copy_keyframes", { keys, cut });
+
+/** Pastes the copied keyframes from frame `position` on; the selected timelines decide where they go. */
+export const pasteKeyframes = (position: number, timelines: string[]) =>
+  invoke<Edited & { keys: KeyframeKey[] }>("paste_keyframes", { position, timelines });
 
 export const renameTimeline = (id: string, name: string) => invoke<Edited>("rename_timeline", { id, name });
 

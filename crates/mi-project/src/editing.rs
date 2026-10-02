@@ -51,7 +51,7 @@ pub enum ValueChange {
 
 /// `tl_keyframe_add`: inserts at `position`, or the next free frame after
 /// it. Returns the index.
-fn insert_keyframe(timeline: &mut Timeline, mut keyframe: Keyframe) -> usize {
+pub(crate) fn insert_keyframe(timeline: &mut Timeline, mut keyframe: Keyframe) -> usize {
     let keyframes = &mut timeline.keyframes;
     let mut i = 0;
     while i < keyframes.len() {
@@ -77,12 +77,15 @@ impl Project {
         ClampContext { render_distance: self.file.render.distance, ..ClampContext::default() }
     }
 
-    /// Changes values of timelines at frame `marker` (`tl_value_set`): the
-    /// keyframe at the marker is edited, or a new one is made there from
-    /// the values the timeline has at that frame.
+    /// Changes values of timelines (`tl_value_set`). Of a timeline with
+    /// keyframes among `selected`, those keyframes are edited, each from
+    /// its own value. Of the others the keyframe at frame `marker` is
+    /// edited, or a new one is made there from the values the timeline has
+    /// at that frame.
     pub fn set_values(
         &mut self,
         timelines: &[SaveId],
+        selected: &[KeyframeRef],
         marker: i64,
         values: &[(ValueId, Value)],
         change: ValueChange,
@@ -90,10 +93,31 @@ impl Project {
     ) {
         let marker = marker.max(0);
         let ctx = self.clamp_context();
+        let apply = |keyframe: &mut Keyframe| {
+            for (value_id, value) in values {
+                let new = match (change, value, &keyframe.values[*value_id]) {
+                    (ValueChange::Add, Value::Number(add), Value::Number(old)) => Value::Number(old + add),
+                    _ => value.clone(),
+                };
+                keyframe.values.set(*value_id, clamp(*value_id, new, ctx));
+            }
+        };
         self.edit("Change value", merge, |edit| {
             let (state, order) = edit.project().evaluate(marker as f64);
+            for key in selected {
+                let Some(timeline) = edit.timeline(&key.timeline) else { continue };
+                if let Some(keyframe) = timeline.keyframes.iter_mut().find(|k| k.position == key.position) {
+                    apply(keyframe);
+                }
+            }
             for id in timelines {
                 let Some(index) = edit.project().timeline_index(id) else { continue };
+                let has_selected = selected.iter().any(|key| {
+                    &key.timeline == id && edit.project().timelines()[index].keyframes.iter().any(|k| k.position == key.position)
+                });
+                if has_selected {
+                    continue;
+                }
                 let current = order.iter().position(|&i| i == index).map(|node| state.nodes[node].values.clone());
                 let Some(timeline) = edit.timeline(id) else { continue };
                 let k = match timeline.keyframes.iter().position(|k| k.position == marker) {
@@ -103,14 +127,7 @@ impl Project {
                         insert_keyframe(timeline, Keyframe { position: marker, values })
                     }
                 };
-                let keyframe = &mut timeline.keyframes[k];
-                for (value_id, value) in values {
-                    let new = match (change, value, &keyframe.values[*value_id]) {
-                        (ValueChange::Add, Value::Number(add), Value::Number(old)) => Value::Number(old + add),
-                        _ => value.clone(),
-                    };
-                    keyframe.values.set(*value_id, clamp(*value_id, new, ctx));
-                }
+                apply(&mut timeline.keyframes[k]);
             }
         });
     }
@@ -282,7 +299,7 @@ mod tests {
     fn editing_between_keyframes_adds_one_from_the_current_values() {
         let mut project = project();
         let id = [SaveId::new("CUBE")];
-        project.set_values(&id, 10, &[(ValueId::PosY, Value::Number(5.0))], ValueChange::Set, None);
+        project.set_values(&id, &[], 10, &[(ValueId::PosY, Value::Number(5.0))], ValueChange::Set, None);
         assert_eq!(positions(&project), [0, 10, 20]);
         let added = &cube(&project).keyframes[1].values;
         // Interpolated halfway, plus the edit.
@@ -290,10 +307,10 @@ mod tests {
         assert!(project.is_changed());
 
         // On a keyframe, that one is edited.
-        project.set_values(&id, 20, &[(ValueId::PosX, Value::Number(1.0))], ValueChange::Add, None);
+        project.set_values(&id, &[], 20, &[(ValueId::PosX, Value::Number(1.0))], ValueChange::Add, None);
         assert_eq!(cube(&project).keyframes[2].values.number(ValueId::PosX), 31.0);
         // Values are clamped.
-        project.set_values(&id, 20, &[(ValueId::Alpha, Value::Number(-2.0))], ValueChange::Set, None);
+        project.set_values(&id, &[], 20, &[(ValueId::Alpha, Value::Number(-2.0))], ValueChange::Set, None);
         assert_eq!(cube(&project).keyframes[2].values.number(ValueId::Alpha), 0.0);
 
         assert!(project.undo() && project.undo());
@@ -310,18 +327,33 @@ mod tests {
         let mut project = project();
         let id = [SaveId::new("CUBE")];
         for step in 1..=5 {
-            project.set_values(&id, 0, &[(ValueId::PosX, Value::Number(step as f64))], ValueChange::Add, Some("drag"));
+            project.set_values(&id, &[], 0, &[(ValueId::PosX, Value::Number(step as f64))], ValueChange::Add, Some("drag"));
         }
         // Every update applies the offset to the value before the drag.
         assert_eq!(cube(&project).keyframes[0].values.number(ValueId::PosX), 15.0);
         project.finish_edit();
-        project.set_values(&id, 0, &[(ValueId::PosX, Value::Number(1.0))], ValueChange::Add, Some("drag"));
+        project.set_values(&id, &[], 0, &[(ValueId::PosX, Value::Number(1.0))], ValueChange::Add, Some("drag"));
         assert_eq!(cube(&project).keyframes[0].values.number(ValueId::PosX), 16.0);
         assert!(project.undo());
         assert_eq!(cube(&project).keyframes[0].values.number(ValueId::PosX), 15.0);
         assert!(project.undo());
         assert_eq!(cube(&project).keyframes[0].values.number(ValueId::PosX), 10.0);
         assert!(!project.undo());
+    }
+
+    #[test]
+    fn selected_keyframes_are_edited_instead_of_the_marker() {
+        let mut project = project();
+        let id = [SaveId::new("CUBE")];
+        let key = |position| KeyframeRef { timeline: SaveId::new("CUBE"), position };
+        // Both keyframes move from their own value; none is added at the marker.
+        project.set_values(&id, &[key(0), key(20)], 10, &[(ValueId::PosX, Value::Number(5.0))], ValueChange::Add, None);
+        assert_eq!(positions(&project), [0, 20]);
+        let x: Vec<f64> = cube(&project).keyframes.iter().map(|k| k.values.number(ValueId::PosX)).collect();
+        assert_eq!(x, [15.0, 35.0]);
+        // A selection that is gone falls back to the marker.
+        project.set_values(&id, &[key(7)], 10, &[(ValueId::PosX, Value::Number(0.0))], ValueChange::Set, None);
+        assert_eq!(positions(&project), [0, 10, 20]);
     }
 
     #[test]

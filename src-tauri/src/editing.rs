@@ -69,11 +69,13 @@ fn ids(list: &[String]) -> Vec<SaveId> {
     list.iter().map(SaveId::new).collect()
 }
 
-/// Changes values of timelines at the current frame. Edits with the same
+/// Changes values of timelines: of their keyframes among `keyframes`
+/// (the selected ones), or else at the current frame. Edits with the same
 /// `merge` key in a row are one undo step (a drag).
 #[tauri::command]
 pub fn set_timeline_values(
     timelines: Vec<String>,
+    keyframes: Option<Vec<KeyframeKey>>,
     values: Vec<ValueEdit>,
     mode: EditMode,
     merge: Option<String>,
@@ -91,9 +93,56 @@ pub fn set_timeline_values(
         EditMode::Set => ValueChange::Set,
         EditMode::Add => ValueChange::Add,
     };
+    let selected: Vec<KeyframeRef> = keyframes.iter().flatten().map(KeyframeRef::from).collect();
     let (_, edited) =
-        change(&state, |p| p.set_values(&ids(&timelines), marker, &values, mode, merge.as_deref()))?;
+        change(&state, |p| p.set_values(&ids(&timelines), &selected, marker, &values, mode, merge.as_deref()))?;
     Ok(edited)
+}
+
+#[derive(Debug, Serialize)]
+pub struct Keyframes {
+    #[serde(flatten)]
+    edited: Edited,
+    /// The keyframes that were made, to select them.
+    keys: Vec<KeyframeKey>,
+}
+
+fn keys_of(keys: Vec<KeyframeRef>) -> Vec<KeyframeKey> {
+    keys.into_iter().map(|k| KeyframeKey { timeline: k.timeline.to_string(), position: k.position }).collect()
+}
+
+/// Adds a keyframe at the current frame to the timelines that have none
+/// there.
+#[tauri::command]
+pub fn create_keyframes(timelines: Vec<String>, state: State<'_, AppState>) -> Result<Keyframes, CommandError> {
+    let marker = state.view().marker.round() as i64;
+    let (keys, edited) = change(&state, |p| p.create_keyframes(&ids(&timelines), marker))?;
+    Ok(Keyframes { edited, keys: keys_of(keys) })
+}
+
+/// Copies keyframes, and removes them with `cut`. Returns how many were
+/// copied.
+#[tauri::command]
+pub fn copy_keyframes(keys: Vec<KeyframeKey>, cut: bool, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    let keys: Vec<KeyframeRef> = keys.iter().map(KeyframeRef::from).collect();
+    let (clipboard, edited) = change(&state, |p| {
+        let clipboard = p.copy_keyframes(&keys);
+        if cut {
+            p.remove_keyframes(&keys);
+        }
+        clipboard
+    })?;
+    *state.clipboard() = clipboard;
+    Ok(edited)
+}
+
+/// Pastes the copied keyframes with the first one at frame `position`;
+/// `timelines` are the selected timelines, which decide where they go.
+#[tauri::command]
+pub fn paste_keyframes(position: i64, timelines: Vec<String>, state: State<'_, AppState>) -> Result<Keyframes, CommandError> {
+    let clipboard = state.clipboard().clone();
+    let (keys, edited) = change(&state, |p| p.paste_keyframes(&clipboard, position, &ids(&timelines)))?;
+    Ok(Keyframes { edited, keys: keys_of(keys) })
 }
 
 /// Ends a drag, so the next edit is a step of its own.

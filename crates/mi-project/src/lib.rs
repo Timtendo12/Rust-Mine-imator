@@ -4,6 +4,7 @@
 
 mod editing;
 mod history;
+mod keyframes;
 mod models;
 mod project;
 mod scenery;
@@ -11,6 +12,7 @@ mod timeline_ops;
 mod tree;
 
 pub use editing::{InfoChange, KeyframeRef, TimelineSetting, ValueChange, TIMELINE_FLAGS};
+pub use keyframes::KeyframeClipboard;
 pub use history::{Edit, History, HISTORY_LIMIT};
 pub use models::{ModelBindings, ModelTextures, PartBinding};
 pub use project::{Project, ProjectContext, ProjectError, ScenerySize};

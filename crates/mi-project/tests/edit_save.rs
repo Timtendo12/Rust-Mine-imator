@@ -11,8 +11,8 @@ fn edited_keyframes_are_saved() {
     let mut project = Project::from_file(file, IdGenerator::new(7)).0;
     let id = SaveId::new("CUBE00000000000A");
 
-    project.set_values(std::slice::from_ref(&id), 0, &[(ValueId::PosX, Value::Number(12.5))], ValueChange::Set, None);
-    project.set_values(std::slice::from_ref(&id), 30, &[(ValueId::RotZ, Value::Number(90.0))], ValueChange::Set, None);
+    project.set_values(std::slice::from_ref(&id), &[], 0, &[(ValueId::PosX, Value::Number(12.5))], ValueChange::Set, None);
+    project.set_values(std::slice::from_ref(&id), &[], 30, &[(ValueId::RotZ, Value::Number(90.0))], ValueChange::Set, None);
     project.move_keyframes(&[KeyframeRef { timeline: id.clone(), position: 30 }], 10, None);
     project.rename_timeline(&id, "Spinning cube");
 

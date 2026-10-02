@@ -41,6 +41,8 @@ interface Props {
   selectedKeyframes: Set<string>;
   playing: boolean;
   onSeek: (marker: number) => void;
+  /** The frame under the mouse in the tracks, or null when it is elsewhere. */
+  onHoverFrame: (frame: number | null) => void;
   onSelect: (id: string) => void;
   onSelectKeyframes: (keys: KeyframeKey[]) => void;
   /** Called while dragging with the total offset from where the drag began. */
@@ -342,7 +344,15 @@ export function Timeline(props: Props) {
           })}
         </div>
 
-        <div className="timeline-tracks" ref={tracks}>
+        <div
+          className="timeline-tracks"
+          ref={tracks}
+          onPointerMove={(e) => {
+            const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+            props.onHoverFrame(Math.max(0, Math.round((x - PADDING) / zoom)));
+          }}
+          onPointerLeave={() => props.onHoverFrame(null)}
+        >
           <div style={{ width, minHeight: "100%", position: "relative" }}>
             <div
               className="timeline-ruler"

@@ -4,8 +4,10 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
   appInfo,
   closeProject,
+  copyKeyframes,
   createBlock,
   createItem,
+  createKeyframes,
   createModel,
   createTimeline,
   duplicateTimelines,
@@ -15,6 +17,7 @@ import {
   moveKeyframes,
   newProject,
   openProject,
+  pasteKeyframes,
   projectSettings,
   redo,
   removeKeyframes,
@@ -65,6 +68,9 @@ export function App() {
   const [marker, setMarker] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedKeyframes, setSelectedKeyframes] = useState<KeyframeKey[]>([]);
+  // How many keyframes were copied, and the frame under the mouse in the timeline.
+  const [copied, setCopied] = useState(0);
+  const hoverFrame = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -199,9 +205,9 @@ export function App() {
       setPlaying(false);
       // Values are edited at a whole frame.
       setMarker((m) => Math.round(m));
-      void run(() => setTimelineValues([selected], values, mode, merge));
+      void run(() => setTimelineValues([selected], selectedKeyframes, values, mode, merge));
     },
-    [run, selected],
+    [run, selected, selectedKeyframes],
   );
 
   const moveSelected = useCallback(
@@ -221,6 +227,36 @@ export function App() {
     setSelectedKeyframes([]);
     void run(() => removeKeyframes(keys));
   }, [run, selectedKeyframes]);
+
+  /** A keyframe at the marker for the selected timeline, if it has none there. */
+  const createKeyframe = useCallback(async () => {
+    if (!selected) return;
+    setPlaying(false);
+    setMarker((m) => Math.round(m));
+    const result = await run(() => createKeyframes([selected]));
+    const keys = (result as (Edited & { keys: KeyframeKey[] }) | null)?.keys ?? [];
+    if (keys.length > 0) setSelectedKeyframes(keys);
+  }, [run, selected]);
+
+  const copySelectedKeyframes = useCallback(
+    (cut: boolean) => {
+      if (selectedKeyframes.length === 0) return;
+      const keys = selectedKeyframes;
+      setCopied(keys.length);
+      if (cut) setSelectedKeyframes([]);
+      void run(() => copyKeyframes(keys, cut));
+    },
+    [run, selectedKeyframes],
+  );
+
+  /** Pastes at the frame under the mouse in the timeline, else at the marker. */
+  const paste = useCallback(async () => {
+    if (copied === 0) return;
+    const position = hoverFrame.current ?? Math.round(marker);
+    const result = await run(() => pasteKeyframes(position, selected ? [selected] : []));
+    const keys = (result as (Edited & { keys: KeyframeKey[] }) | null)?.keys ?? [];
+    if (keys.length > 0) setSelectedKeyframes(keys);
+  }, [copied, marker, run, selected]);
 
   /** Delete: the selected keyframes if there are any, else the selected timeline. */
   const deleteSelection = useCallback(() => {
@@ -359,6 +395,15 @@ export function App() {
       } else if (ctrl && key === "d") {
         event.preventDefault();
         void duplicate();
+      } else if (ctrl && key === "q") {
+        event.preventDefault();
+        void createKeyframe();
+      } else if (ctrl && key === "c") {
+        copySelectedKeyframes(false);
+      } else if (ctrl && key === "x") {
+        copySelectedKeyframes(true);
+      } else if (ctrl && key === "v") {
+        void paste();
       } else if (event.key === "Delete") {
         deleteSelection();
       } else if (event.key === " ") {
@@ -368,7 +413,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew, doExportImage]);
+  }, [project, doSave, saveAs, doUndo, doRedo, deleteSelection, duplicate, startNew, doExportImage, createKeyframe, copySelectedKeyframes, paste]);
 
   if (!project) {
     return (
@@ -402,6 +447,10 @@ export function App() {
         { label: project.undo ? `Undo ${project.undo.toLowerCase()}` : "Undo", action: project.undo ? doUndo : undefined, shortcut: "Ctrl+Z" },
         { label: project.redo ? `Redo ${project.redo.toLowerCase()}` : "Redo", action: project.redo ? doRedo : undefined, shortcut: "Ctrl+Y" },
         { label: "Select all" },
+        { label: "Create keyframe", action: selected ? () => void createKeyframe() : undefined, shortcut: "Ctrl+Q" },
+        { label: "Copy keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(false) : undefined, shortcut: "Ctrl+C" },
+        { label: "Cut keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(true) : undefined, shortcut: "Ctrl+X" },
+        { label: "Paste keyframes", action: copied > 0 ? () => void paste() : undefined, shortcut: "Ctrl+V" },
         { label: "Duplicate timeline", action: selected ? () => void duplicate() : undefined, shortcut: "Ctrl+D" },
         {
           label: selectedKeyframes.length > 0 ? "Delete keyframes" : "Delete timeline",
@@ -453,6 +502,7 @@ export function App() {
             selectedKeyframes={new Set(selectedKeyframes.map(keyframeId))}
             playing={playing}
             onSeek={seek}
+            onHoverFrame={(f) => (hoverFrame.current = f)}
             onSelect={setSelected}
             onSelectKeyframes={setSelectedKeyframes}
             onMoveKeyframes={(keys, offset) => void moveSelected(keys, offset)}

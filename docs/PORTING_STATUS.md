@@ -56,10 +56,10 @@ Legend: **done** · **partial** · **not started**
 | Scene evaluation at a frame (values, transforms, active camera) | done, without model data: body parts have no bend or part offsets until assets are loaded |
 | Reference counting of resources | not started |
 | Save id remapping when importing | not started |
-| Undo / redo (commands replacing 821 action scripts) | partial: snapshot-based history (100 steps) with merged drags; edits so far: values at the marker (with the keyframe rules of `tl_value_set`), moving and removing keyframes, renaming and hiding timelines |
+| Undo / redo (commands replacing 821 action scripts) | partial: snapshot-based history (100 steps) with merged drags; edits so far: values of the selected keyframes or at the marker (with the keyframe rules of `tl_value_set`), creating, moving, removing, cutting and pasting keyframes, renaming and hiding timelines |
 | Selection, copy / paste, duplicate | not started |
 | Timeline operations (add, remove, reparent, parts of models) | partial: creating folders, cameras (at the work camera), lights and shapes (with their own template); removing with children and clearing references (`tl_remove_clean`); duplicating subtrees; reparenting and reordering by dragging in the list. Characters, special blocks (with a timeline per model part in the model's hierarchy), blocks in their default state and items, from a workbench with search. Not yet: workbench settings (states, skins, previews), scenery, text and particles, placing in the viewport, multiple selection, copy and paste |
-| Keyframe operations (add, move, select, copy, transitions) | not started |
+| Keyframe operations (add, move, select, copy, transitions) | partial: creating at the marker (Ctrl+Q), moving, removing, copy / cut / paste (Ctrl+C/X/V, with the free / model / fixed target rules of `tl_keyframes_paste`), editing all selected keyframes at once, transitions from the frame editor. Not yet: bezier handles, box selection, the select before / after marker commands, saving keyframes to `.miframes` |
 | Library operations (templates, resources) | not started |
 
 ## Animation
@@ -144,10 +144,10 @@ Legend: **done** · **partial** · **not started**
 | Properties panel | partial | Project settings (name, author, description, render size, tempo), render settings (samples, distance, main effects), environment (time, rotation, clouds, ground, twilight, fog, wind, scene colours, texture speed) are editable with undo; library and resources are read-only. The selected timeline has a frame editor with every number, switch, colour, choice and text value its type supports (position, rotation, scale, bend, colour, surface, light, camera effects, background, text, visibility and transition), grouped like the original's; values that point at other objects (textures, paths, IK targets, sounds) and the bezier handles are not editable yet. Its settings that are not animated can be switched too: what it inherits from its parent, appearance options, and lock and hide flags |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
-| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. No markers, regions, audio, box selection or copy and paste. |
+| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). No markers, regions, audio or box selection. |
 | Docking panels, pop-out windows | not started | |
-| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |
-| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframe moving and removing; reparenting, markers, regions and audio clips not yet |
+| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move and rotate tools. No second view or overlays. |
+| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes and reparenting; markers, regions and audio clips not yet |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |
 | Properties tabs (project, render, library, background, resources) | not started | |

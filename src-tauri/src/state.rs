@@ -25,6 +25,8 @@ pub struct AppState {
     scenery: Mutex<Option<SceneryStore>>,
     /// Timelines selected in the editor, which the viewport outlines.
     selection: Mutex<Vec<mi_core::SaveId>>,
+    /// Copied keyframes; kept when another project is opened, as in the original.
+    clipboard: Mutex<mi_project::KeyframeClipboard>,
     startup_path: Mutex<Option<String>>,
 }
 
@@ -164,6 +166,11 @@ impl AppState {
     pub fn set_selection(&self, selection: Vec<mi_core::SaveId>) {
         *lock(&self.selection) = selection;
         self.redraw();
+    }
+
+    /// The copied keyframes.
+    pub fn clipboard(&self) -> MutexGuard<'_, mi_project::KeyframeClipboard> {
+        lock(&self.clipboard)
     }
 
     /// The viewport, once it runs.
