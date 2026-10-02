@@ -10,6 +10,12 @@ use mi_format::FormatError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+type Vec3 = [f64; 3];
+
+/// The size in blocks of a loaded scenery resource, in the timeline's
+/// axes; `None` while it is not loaded.
+pub type ScenerySize<'a> = dyn Fn(&SaveId) -> Option<[f64; 3]> + 'a;
+
 /// Why a project could not be opened or saved.
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -296,15 +302,70 @@ impl Project {
         }
     }
 
+    /// The rotation point a template gives its timelines
+    /// (`temp_update_rot_point`): the middle of the floor of blocks and
+    /// scenery, the bottom of shapes. `scenery_size` is the size in blocks
+    /// of a loaded scenery resource, in the timeline's axes.
+    pub fn template_rot_point(&self, template: &Template, scenery_size: &ScenerySize) -> Vec3 {
+        const BLOCK: f64 = 16.0;
+        const ITEM_SIZE: f64 = 16.0;
+        let repeat = if template.block_repeat_enable { template.block_repeat } else { [1.0; 3] };
+        let mut point = [0.0; 3];
+        match template.kind {
+            TempType::Scenery => {
+                if let Some(size) = template.scenery.as_id().and_then(scenery_size) {
+                    point[0] = repeat[0] * size[0] * BLOCK / 2.0;
+                    point[1] = repeat[1] * size[1] * BLOCK / 2.0;
+                }
+            }
+            TempType::Block => {
+                point[0] = repeat[0] * BLOCK / 2.0;
+                point[1] = repeat[1] * BLOCK / 2.0;
+            }
+            TempType::Item => {
+                point[0] = ITEM_SIZE / 2.0;
+                point[1] = if template.item.is_3d { 0.5 } else { 0.0 };
+            }
+            TempType::Text => {
+                point[1] = if template.text.is_3d { 0.5 } else { 0.0 };
+            }
+            // Block-format models get the middle of a block too, once
+            // models can be loaded.
+            _ => {}
+        }
+        if template.kind.is_shape() {
+            point[2] = -8.0;
+        }
+        point
+    }
+
+    /// The rotation point a timeline turns around (`tl_update_rot_point`):
+    /// its own when custom or part of a model or scenery, else its
+    /// template's.
+    pub fn rot_point(&self, timeline: &Timeline, scenery_size: &ScenerySize) -> Vec3 {
+        if timeline.rot_point_custom || !timeline.part_of.is_null() {
+            return timeline.rot_point;
+        }
+        match timeline.temp.as_id().and_then(|id| self.template(id)) {
+            Some(template) => self.template_rot_point(template, scenery_size),
+            None => timeline.rot_point,
+        }
+    }
+
     /// The timelines in tree order, as the transform update wants them.
     /// The second list maps each node back to its timeline index.
     pub fn scene_nodes(&self) -> (Vec<SceneNode<'_>>, Vec<usize>) {
-        self.scene_nodes_with(&|_| None)
+        self.scene_nodes_with(&|_| None, &|_| None)
     }
 
     /// Like [`Project::scene_nodes`], with the model part of each body part
-    /// timeline given by `part_of_timeline` (timeline index to part).
-    pub fn scene_nodes_with(&self, part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>) -> (Vec<SceneNode<'_>>, Vec<usize>) {
+    /// timeline given by `part_of_timeline` (timeline index to part) and
+    /// the sizes of loaded scenery.
+    pub fn scene_nodes_with(
+        &self,
+        part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>,
+        scenery_size: &ScenerySize,
+    ) -> (Vec<SceneNode<'_>>, Vec<usize>) {
         let order = self.tree.order().to_vec();
         let mut node_of = vec![usize::MAX; self.timelines().len()];
         for (node, &timeline) in order.iter().enumerate() {
@@ -320,7 +381,7 @@ impl Project {
                     parent: self.tree.parent(i).map(|p| node_of[p]),
                     part_of: timeline.part_of.as_id().and_then(|id| self.timeline_index(id)).map(|p| node_of[p]),
                     part: part_of_timeline(i),
-                    rot_point: if timeline.rot_point_custom { timeline.rot_point } else { [0.0; 3] },
+                    rot_point: self.rot_point(timeline, scenery_size),
                 }
             })
             .collect();
@@ -330,13 +391,18 @@ impl Project {
     /// Evaluates the whole scene at frame `marker`. `SceneState::nodes` is
     /// in tree order; the returned list gives the timeline index of each.
     pub fn evaluate(&self, marker: f64) -> (SceneState, Vec<usize>) {
-        self.evaluate_with(marker, &|_| None)
+        self.evaluate_with(marker, &|_| None, &|_| None)
     }
 
     /// Like [`Project::evaluate`], with model parts (see
     /// [`Project::scene_nodes_with`]).
-    pub fn evaluate_with(&self, marker: f64, part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>) -> (SceneState, Vec<usize>) {
-        let (nodes, order) = self.scene_nodes_with(part_of_timeline);
+    pub fn evaluate_with(
+        &self,
+        marker: f64,
+        part_of_timeline: &dyn Fn(usize) -> Option<PartInfo>,
+        scenery_size: &ScenerySize,
+    ) -> (SceneState, Vec<usize>) {
+        let (nodes, order) = self.scene_nodes_with(part_of_timeline, scenery_size);
         (update_scene(&nodes, &self.playhead(marker)), order)
     }
 

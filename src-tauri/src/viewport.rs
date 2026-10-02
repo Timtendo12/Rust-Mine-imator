@@ -186,7 +186,8 @@ impl RenderThread {
                     ViewCamera::Work(view.work_camera)
                 };
                 let bindings = state.bindings();
-                let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref() };
+                let scenery = state.scenery();
+                let inputs = SceneInputs { pack: state.pack(), bindings: bindings.as_ref(), scenery: scenery.as_ref() };
                 let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
                 build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
             })

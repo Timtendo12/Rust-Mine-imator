@@ -11,5 +11,6 @@ mi-anim = { workspace = true }
 mi-core = { workspace = true }
 mi-format = { workspace = true }
 mi-mesh = { workspace = true }
+flate2 = "1"
 thiserror = { workspace = true }
 zip = { version = "2", default-features = false, features = ["deflate"] }

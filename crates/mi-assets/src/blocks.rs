@@ -52,6 +52,16 @@ impl Dir {
         self as usize
     }
 
+    /// The axis a face of this side spans fully to count as covering, and
+    /// the axis its coverage is measured along.
+    fn axes(self) -> (usize, usize) {
+        match self {
+            Dir::East | Dir::West => (1, 2),
+            Dir::South | Dir::North => (0, 2),
+            Dir::Up | Dir::Down => (0, 1),
+        }
+    }
+
     pub fn opposite(self) -> Dir {
         match self {
             Dir::East => Dir::West,
@@ -83,6 +93,7 @@ pub struct BlockStateValue {
     /// Blockstate file used when the state has this value.
     pub file: Option<String>,
     pub emissive: Option<f64>,
+    pub random_offset: Option<bool>,
 }
 
 /// A block of the asset manifest (`obj_block`).
@@ -94,6 +105,14 @@ pub struct BlockDef {
     pub file: Option<String>,
     pub emissive: f64,
     pub subsurface: f64,
+    /// Placed as a timeline in scenery (chests, doors, beds, ...).
+    pub timeline: bool,
+    /// Drawn in the scenery as well as placed as a timeline.
+    pub model_double: bool,
+    /// Always waterlogged (kelp, seagrass).
+    pub waterlogged: bool,
+    pub random_offset: bool,
+    pub random_offset_xy: bool,
     pub states: Vec<(String, Vec<BlockStateValue>)>,
     pub default_state: Vec<(String, String)>,
     /// Minecraft ids and the state they stand for (`minecraft:oak_stairs`
@@ -118,6 +137,7 @@ impl BlockDef {
                                     value: o.string("value").unwrap_or("").to_owned(),
                                     file: o.string("file").map(str::to_owned),
                                     emissive: o.real("emissive"),
+                                    random_offset: o.flag("random_offset"),
                                 },
                                 other => BlockStateValue {
                                     value: match other {
@@ -127,6 +147,7 @@ impl BlockDef {
                                     },
                                     file: None,
                                     emissive: None,
+                                    random_offset: None,
                                 },
                             })
                             .collect();
@@ -148,28 +169,47 @@ impl BlockDef {
             file: map.string("file").map(str::to_owned),
             emissive: map.real("emissive").unwrap_or(0.0),
             subsurface: map.real("subsurface").unwrap_or(0.0),
+            timeline: map.object("timeline").is_some(),
+            model_double: map.object("timeline").and_then(|t| t.flag("model_double")).unwrap_or(false),
+            waterlogged: map.flag("waterlogged").unwrap_or(false),
+            random_offset: map.flag("random_offset").unwrap_or(false),
+            random_offset_xy: map.flag("random_offset_xz").unwrap_or(false),
             states,
             default_state: map.string("default_state").map(parse_state_vars).unwrap_or_default(),
             ids,
         })
     }
 
-    /// The value of every declared state: given, else the default, else the
-    /// first possible value.
+    /// The value of every declared state as the builder sees it
+    /// (`block_get_state_id`): the given value if the state has it, else
+    /// the first possible value. Undeclared names are ignored.
     pub fn full_state(&self, given: &[(String, StateValue)]) -> Vec<(String, String)> {
+        let given: Vec<(String, String)> = given.iter().map(|(n, v)| (n.clone(), v.to_text())).collect();
+        self.state_from_vars(&given)
+    }
+
+    /// [`BlockDef::full_state`] from text values.
+    pub fn state_from_vars(&self, given: &[(String, String)]) -> Vec<(String, String)> {
         self.states
             .iter()
             .map(|(name, values)| {
+                // Later values win, as when the original adds variables.
                 let value = given
                     .iter()
-                    .find(|(n, _)| n == name)
-                    .map(|(_, v)| v.to_text())
-                    .or_else(|| self.default_state.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()))
+                    .rev()
+                    .find(|(n, v)| n == name && values.iter().any(|o| &o.value == v))
+                    .map(|(_, v)| v.clone())
                     .or_else(|| values.first().map(|v| v.value.clone()))
                     .unwrap_or_default();
                 (name.clone(), value)
             })
             .collect()
+    }
+
+    /// The state a newly picked block starts in: the default state of the
+    /// manifest, filled up with first values.
+    pub fn default_full_state(&self) -> Vec<(String, String)> {
+        self.state_from_vars(&self.default_state)
     }
 }
 
@@ -183,6 +223,21 @@ pub struct RenderFace {
     /// Whether the face lies on the boundary of the block, where a
     /// neighbouring block can hide it.
     pub edge: bool,
+    /// Transparency of the texture (`e_block_depth`).
+    pub depth: Depth,
+}
+
+/// How transparent a texture is (`e_block_depth`). Faces only hide
+/// neighbouring faces that are at least as transparent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum Depth {
+    /// Opaque.
+    #[default]
+    Opaque,
+    /// Has fully transparent pixels (glass, leaves).
+    Cutout,
+    /// Has partly transparent pixels (stained glass, ice).
+    Translucent,
 }
 
 /// A box of a block model, ready to be turned into faces.
@@ -203,6 +258,12 @@ pub struct RenderModel {
     /// Whether each face direction is fully covered, for hiding the faces
     /// of neighbours.
     pub face_full: [bool; 6],
+    /// The covered range of each side along its second axis (Z for the
+    /// sides, Y for the top and bottom), from faces spanning the first.
+    pub face_min: [Option<f64>; 6],
+    pub face_max: [Option<f64>; 6],
+    /// The most opaque face on each side.
+    pub face_min_depth: [Option<Depth>; 6],
 }
 
 /// A parsed block model file.
@@ -416,6 +477,7 @@ pub struct Blocks {
     ids: HashMap<String, (String, Vec<(String, String)>)>,
     models: Mutex<HashMap<String, Option<Arc<ModelJson>>>>,
     state_files: Mutex<HashMap<String, Option<Arc<JsonObject>>>>,
+    depths: Mutex<HashMap<String, Option<Depth>>>,
 }
 
 impl std::fmt::Debug for Blocks {
@@ -436,7 +498,11 @@ impl Blocks {
                 defs.insert(def.name.clone(), def);
             }
         }
-        Self { defs, ids, models: Mutex::default(), state_files: Mutex::default() }
+        // Grass paths were renamed to dirt paths in 1.17.
+        if let Some(entry) = ids.get("minecraft:dirt_path").cloned() {
+            ids.entry("minecraft:grass_path".to_owned()).or_insert(entry);
+        }
+        Self { defs, ids, models: Mutex::default(), state_files: Mutex::default(), depths: Mutex::default() }
     }
 
     pub fn def(&self, name: &str) -> Option<&BlockDef> {
@@ -534,9 +600,7 @@ impl Blocks {
             (!name.is_empty()).then_some(name)
         };
 
-        let mut model = RenderModel { elements: Vec::new(), weight: variant.weight, face_full: [false; 6] };
-        let mut face_min: [Option<f64>; 6] = [None; 6];
-        let mut face_max: [Option<f64>; 6] = [None; 6];
+        let mut model = RenderModel { weight: variant.weight, ..Default::default() };
 
         for element in &elements {
             let mut from = element.from;
@@ -655,6 +719,8 @@ impl Blocks {
                     _ => &face.texture,
                 };
                 let Some(texture) = resolve_texture(texture_source) else { continue };
+                // Faces with missing textures are left out.
+                let Some(depth) = self.texture_depth(pack, &texture) else { continue };
 
                 let edge = !rotated
                     && match Dir::ALL[nd] {
@@ -666,26 +732,25 @@ impl Blocks {
                         Dir::Down => from[2] == 0.0,
                     };
                 if edge && !model.face_full[nd] {
-                    // The two axes across the face; it is full when it spans
-                    // the first and covers 0..16 along the second.
-                    let (across, along) = match Dir::ALL[nd] {
-                        Dir::East | Dir::West => (1, 2),
-                        Dir::South | Dir::North => (0, 2),
-                        Dir::Up | Dir::Down => (0, 1),
-                    };
+                    // The face is full when faces spanning the first axis
+                    // across it cover 0..16 along the second.
+                    let (across, along) = Dir::ALL[nd].axes();
                     if from[across] == 0.0 && to[across] == BLOCK {
-                        if face_min[nd].is_none_or(|m| from[along] <= m) {
-                            face_min[nd] = Some(from[along]);
+                        if model.face_min[nd].is_none_or(|m| from[along] <= m) {
+                            model.face_min[nd] = Some(from[along]);
                         }
-                        if face_max[nd].is_none_or(|m| to[along] >= m) {
-                            face_max[nd] = Some(to[along]);
+                        if model.face_max[nd].is_none_or(|m| to[along] >= m) {
+                            model.face_max[nd] = Some(to[along]);
                         }
-                        if face_min[nd] == Some(0.0) && face_max[nd] == Some(BLOCK) {
+                        if model.face_min[nd] == Some(0.0) && model.face_max[nd] == Some(BLOCK) {
                             model.face_full[nd] = true;
                         }
                     }
+                    if model.face_min_depth[nd].is_none_or(|d| depth < d) {
+                        model.face_min_depth[nd] = Some(depth);
+                    }
                 }
-                faces[nd] = Some(RenderFace { uv, texture, edge });
+                faces[nd] = Some(RenderFace { uv, texture, edge, depth });
             }
             model.elements.push(RenderElement { from, to, matrix, faces });
         }
@@ -715,9 +780,29 @@ impl Blocks {
             .collect()
     }
 
-    /// Meshes of a block in a state repeated `size` times along each axis,
-    /// grouped by texture (`temp_update_block`). Faces between neighbours
-    /// that cover each other are left out; the outer faces are kept.
+    /// What the builder needs to place a block in a state.
+    pub fn placed(&self, pack: &AssetPack, block: &BlockDef, state: &[(String, String)]) -> PlacedBlock {
+        let mut offset = match (block.random_offset, block.random_offset_xy) {
+            (true, _) => RandomOffset::Xyz,
+            (false, true) => RandomOffset::Xy,
+            _ => RandomOffset::None,
+        };
+        for (name, values) in &block.states {
+            let Some((_, value)) = state.iter().find(|(n, _)| n == name) else { continue };
+            if let Some(true) = values.iter().find(|v| &v.value == value).and_then(|v| v.random_offset) {
+                offset = RandomOffset::Xyz;
+            }
+        }
+        PlacedBlock {
+            models: self.models(pack, block, state),
+            emissive: self.emissive(block, state),
+            leaves: block.kind == "leaves",
+            offset,
+        }
+    }
+
+    /// Meshes of a block in a state repeated `size` times along each axis
+    /// (`temp_update_block`).
     pub fn grid_meshes(
         &self,
         pack: &AssetPack,
@@ -726,37 +811,34 @@ impl Blocks {
         size: [usize; 3],
         randomize: bool,
     ) -> Vec<(String, MeshData)> {
-        let models = self.models(pack, block, state);
-        if models.is_empty() {
-            return Vec::new();
-        }
-        let emissive = self.emissive(block, state);
-        let size = size.map(|s| s.max(1));
-        let seed = |p: [i64; 3]| (p[0] as u64).wrapping_mul(3_129_871) ^ (p[1] as u64).wrapping_mul(116_129_781) ^ (p[2] as u64);
-        let chosen = |p: [i64; 3]| -> Vec<&RenderModel> {
-            models.iter().filter_map(|choices| pick_weighted(choices, seed(p), randomize)).collect()
-        };
-        let inside = |p: [i64; 3]| (0..3).all(|i| p[i] >= 0 && p[i] < size[i] as i64);
+        let placed = [self.placed(pack, block, state)];
+        grid_meshes(size, &placed, &|_| Some(0), randomize)
+    }
 
-        let mut out: HashMap<String, MeshData> = HashMap::new();
-        for z in 0..size[2] as i64 {
-            for y in 0..size[1] as i64 {
-                for x in 0..size[0] as i64 {
-                    let p = [x, y, z];
-                    let here = chosen(p);
-                    let hidden = |dir: Dir| {
-                        let s = dir.step();
-                        let n = [p[0] + s[0], p[1] + s[1], p[2] + s[2]];
-                        inside(n) && chosen(n).iter().any(|m| m.face_full[dir.opposite().index()])
-                    };
-                    let offset = [x as f64 * BLOCK, y as f64 * BLOCK, z as f64 * BLOCK];
-                    block_mesh(&here, offset, emissive, &hidden, &mut out);
+    /// The transparency of a block texture; `None` when it does not exist.
+    pub fn texture_depth(&self, pack: &AssetPack, name: &str) -> Option<Depth> {
+        if let Some(depth) = self.depths.lock().unwrap_or_else(|e| e.into_inner()).get(name) {
+            return *depth;
+        }
+        let depth = pack.block_texture(name).map(|image| {
+            // Leaves count as transparent whether or not they are, which
+            // the original does "to fix wind issues".
+            if name.contains("leaves") {
+                return Depth::Cutout;
+            }
+            let mut depth = Depth::Opaque;
+            for alpha in image.pixels.chunks_exact(4).map(|p| p[3]) {
+                if alpha < 255 {
+                    depth = Depth::Cutout;
+                }
+                if alpha > 0 && alpha < 255 {
+                    return Depth::Translucent;
                 }
             }
-        }
-        let mut meshes: Vec<(String, MeshData)> = out.into_iter().collect();
-        meshes.sort_by(|a, b| a.0.cmp(&b.0));
-        meshes
+            depth
+        });
+        self.depths.lock().unwrap_or_else(|e| e.into_inner()).insert(name.to_owned(), depth);
+        depth
     }
 
     /// Emission of a block in a state.
@@ -772,14 +854,139 @@ impl Blocks {
     }
 }
 
+/// How a block is moved randomly within its cell (flowers, grass).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RandomOffset {
+    #[default]
+    None,
+    /// Up to 4 pixels sideways.
+    Xy,
+    /// Sideways and up to 3 pixels down.
+    Xyz,
+}
+
+/// A block in a state as the builder places it.
+#[derive(Debug, Clone, Default)]
+pub struct PlacedBlock {
+    /// One list of weighted alternatives per model that applies.
+    pub models: Vec<Vec<RenderModel>>,
+    pub emissive: f64,
+    /// Leaves are not hidden by transparent neighbours.
+    pub leaves: bool,
+    pub offset: RandomOffset,
+}
+
+/// A small hash of a position, for choices that should look random but
+/// stay the same every time the mesh is built.
+fn position_hash(p: [i64; 3], salt: u64) -> u64 {
+    let mut h = (p[0] as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (p[1] as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+        ^ (p[2] as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+        ^ salt;
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    h ^= h >> 33;
+    h
+}
+
+/// Meshes of a grid of blocks, grouped by texture (`builder_generate`).
+/// `cell` gives the palette index of the block at a position, or `None`
+/// for air. Faces on the boundary of a block are left out where the
+/// neighbour covers them with a face at least as opaque.
+pub fn grid_meshes(
+    size: [usize; 3],
+    palette: &[PlacedBlock],
+    cell: &dyn Fn([usize; 3]) -> Option<usize>,
+    randomize: bool,
+) -> Vec<(String, MeshData)> {
+    let size = size.map(|s| s.max(1));
+    let total = size[0] * size[1] * size[2];
+    let block_at = |p: [i64; 3]| -> Option<&PlacedBlock> {
+        if (0..3).any(|i| p[i] < 0 || p[i] >= size[i] as i64) {
+            return None;
+        }
+        palette.get(cell([p[0] as usize, p[1] as usize, p[2] as usize])?)
+    };
+
+    let mut out: HashMap<String, MeshData> = HashMap::new();
+    for z in 0..size[2] as i64 {
+        for y in 0..size[1] as i64 {
+            for x in 0..size[0] as i64 {
+                let p = [x, y, z];
+                let Some(block) = block_at(p) else { continue };
+                if block.models.is_empty() {
+                    continue;
+                }
+                let seed = position_hash(p, 0);
+                let here: Vec<&RenderModel> =
+                    block.models.iter().filter_map(|choices| pick_weighted(choices, seed, randomize)).collect();
+                // Multipart blocks do not hide their neighbours' faces, as
+                // in the original.
+                let neighbours = Dir::ALL.map(|dir| {
+                    let s = dir.step();
+                    let n = [p[0] + s[0], p[1] + s[1], p[2] + s[2]];
+                    let other = block_at(n)?;
+                    if other.models.len() != 1 {
+                        return None;
+                    }
+                    pick_weighted(&other.models[0], position_hash(n, 0), randomize)
+                });
+
+                let mut offset = [x as f64 * BLOCK, y as f64 * BLOCK, z as f64 * BLOCK];
+                let offset_xy = match block.offset {
+                    RandomOffset::Xyz => total > 1,
+                    RandomOffset::Xy => size[0] * size[1] > 1,
+                    RandomOffset::None => false,
+                };
+                if offset_xy {
+                    let h = position_hash(p, 1);
+                    offset[0] += (h % 9) as f64 - 4.0;
+                    offset[1] += ((h >> 8) % 9) as f64 - 4.0;
+                    if block.offset == RandomOffset::Xyz {
+                        offset[2] -= ((h >> 16) % 4) as f64;
+                    }
+                }
+                let culled = |model: &RenderModel, element: &RenderElement, dir: Dir| {
+                    face_culled(model, element, dir, neighbours[dir.index()], block.leaves)
+                };
+                block_mesh(&here, offset, block.emissive, &culled, &mut out);
+            }
+        }
+    }
+    let mut meshes: Vec<(String, MeshData)> = out.into_iter().collect();
+    meshes.sort_by(|a, b| a.0.cmp(&b.0));
+    meshes
+}
+
+/// Whether a face on side `dir` of a block is hidden by the neighbour on
+/// that side (`block_render_model_generate_face_cull`).
+fn face_culled(model: &RenderModel, element: &RenderElement, dir: Dir, neighbour: Option<&RenderModel>, leaves: bool) -> bool {
+    let d = dir.index();
+    if !element.faces[d].as_ref().is_some_and(|f| f.edge) {
+        return false;
+    }
+    let Some(neighbour) = neighbour else { return false };
+    let o = dir.opposite().index();
+    let Some(neighbour_depth) = neighbour.face_min_depth[o] else { return false };
+    if model.face_min_depth[d].is_none_or(|own| neighbour_depth > own) {
+        return false;
+    }
+    if leaves && neighbour_depth > Depth::Opaque {
+        return false;
+    }
+    let (_, along) = dir.axes();
+    neighbour.face_full[o]
+        || matches!((neighbour.face_min[o], neighbour.face_max[o]),
+            (Some(min), Some(max)) if min <= element.from[along] && max >= element.to[along])
+}
+
 /// Faces of a block grouped by texture, positioned at `offset` (in units,
-/// one block is 16). `hidden(dir)` tells whether faces on that side of the
-/// block are covered by a neighbour.
+/// one block is 16). `culled` tells whether a face of an element is hidden.
 pub fn block_mesh(
     models: &[&RenderModel],
     offset: Vec3,
     emissive: f64,
-    hidden: &dyn Fn(Dir) -> bool,
+    culled: &dyn Fn(&RenderModel, &RenderElement, Dir) -> bool,
     out: &mut HashMap<String, MeshData>,
 ) {
     let custom = [0.0, 0.0, emissive as f32, 0.0];
@@ -796,7 +1003,7 @@ pub fn block_mesh(
             let (x1, y1, z1, x2, y2, z2) = (f[0], f[1], f[2], t[0], t[1], t[2]);
             for dir in Dir::ALL {
                 let Some(face) = &element.faces[dir.index()] else { continue };
-                if face.edge && hidden(dir) {
+                if culled(model, element, dir) {
                     continue;
                 }
                 let corners = match dir {
@@ -831,9 +1038,7 @@ pub fn pick_weighted(choices: &[RenderModel], seed: u64, randomize: bool) -> Opt
     if total <= 0.0 {
         return choices.first();
     }
-    // A small hash so neighbouring blocks differ.
-    let mut h = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    h ^= h >> 31;
+    let h = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (seed >> 29);
     let mut target = (h % 1_000_000) as f64 / 1_000_000.0 * total;
     for choice in choices {
         target -= choice.weight.max(0.0);

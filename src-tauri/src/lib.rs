@@ -36,7 +36,20 @@ pub fn run() {
                     mi_assets::AssetPack::open(&folder, mi_core::version::MINECRAFT_VERSION).map_err(|e| e.to_string())
                 });
             match pack {
-                Ok(pack) => app.state::<state::AppState>().set_pack(pack),
+                Ok(pack) => {
+                    // Numeric block ids of old schematics.
+                    let legacy = app
+                        .path()
+                        .resolve("assets/Data/legacy.midata", tauri::path::BaseDirectory::Resource)
+                        .ok()
+                        .and_then(|path| std::fs::read(path).ok());
+                    let state = app.state::<state::AppState>();
+                    match legacy {
+                        Some(bytes) => state.set_legacy(mi_assets::LegacyBlocks::load(&bytes, pack.blocks())),
+                        None => eprintln!("Could not read legacy.midata; old schematics will be empty"),
+                    }
+                    state.set_pack(pack)
+                }
                 Err(error) => eprintln!("Could not load the Minecraft assets: {error}"),
             }
 

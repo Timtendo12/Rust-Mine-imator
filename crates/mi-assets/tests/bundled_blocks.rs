@@ -24,11 +24,11 @@ fn every_block_value_has_a_model_with_existing_textures() {
     names.sort();
     for name in names {
         let block = blocks.def(name).unwrap();
-        let mut states = vec![block.full_state(&[])];
+        let mut states = vec![block.default_full_state()];
         // Try each value of each state on top of the default.
         for (state, values) in &block.states {
             for value in values.iter().take(24) {
-                let mut s = block.full_state(&[]);
+                let mut s = block.default_full_state();
                 if let Some(slot) = s.iter_mut().find(|(n, _)| n == state) {
                     slot.1 = value.value.clone();
                 }
@@ -47,7 +47,7 @@ fn every_block_value_has_a_model_with_existing_textures() {
             }
             let chosen: Vec<_> = models.iter().map(|c| &c[0]).collect();
             let mut meshes: HashMap<String, MeshData> = HashMap::new();
-            block_mesh(&chosen, [0.0; 3], 0.0, &|_| false, &mut meshes);
+            block_mesh(&chosen, [0.0; 3], 0.0, &|_, _, _| false, &mut meshes);
             for (texture, mesh) in &meshes {
                 assert_eq!(mesh.vertices.len() % 3, 0);
                 assert!(mesh.vertices.iter().all(|v| v.position.iter().all(|c| c.is_finite())));
@@ -76,7 +76,7 @@ fn a_full_block_covers_its_faces() {
     assert_eq!(models[0][0].face_full, [true; 6]);
 
     let mut meshes = HashMap::new();
-    block_mesh(&[&models[0][0]], [16.0, 0.0, 0.0], 0.0, &|_| false, &mut meshes);
+    block_mesh(&[&models[0][0]], [16.0, 0.0, 0.0], 0.0, &|_, _, _| false, &mut meshes);
     let mesh = &meshes["block/stone"];
     assert_eq!(mesh.triangle_count(), 12);
     let xs: Vec<f32> = mesh.vertices.iter().map(|v| v.position[0]).collect();
@@ -84,7 +84,7 @@ fn a_full_block_covers_its_faces() {
 
     // Hidden sides are left out.
     let mut meshes = HashMap::new();
-    block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|d| d != mi_assets::Dir::Up, &mut meshes);
+    block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|_, _, d| d != mi_assets::Dir::Up, &mut meshes);
     assert_eq!(meshes["block/stone"].triangle_count(), 2);
 
     let (block, state) = blocks.by_id("minecraft:granite").unwrap();
@@ -98,10 +98,13 @@ fn stairs_follow_their_facing() {
     let blocks = Blocks::load(&pack);
     let stairs = blocks.def("stairs").unwrap();
     let bounds = |facing: &str| {
-        let state = stairs.full_state(&[("facing".into(), mi_format::StateValue::Str(facing.into()))]);
+        let state = stairs.full_state(&[
+            ("facing".into(), mi_format::StateValue::Str(facing.into())),
+            ("half".into(), mi_format::StateValue::Str("bottom".into())),
+        ]);
         let models = blocks.models(&pack, stairs, &state);
         let mut meshes = HashMap::new();
-        block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|_| false, &mut meshes);
+        block_mesh(&[&models[0][0]], [0.0; 3], 0.0, &|_, _, _| false, &mut meshes);
         // Centre of the upper step.
         let upper: Vec<[f32; 3]> = meshes.values().flat_map(|m| m.vertices.iter().map(|v| v.position)).filter(|p| p[2] > 8.0).collect();
         let n = upper.len() as f32;

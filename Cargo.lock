@@ -2057,6 +2057,7 @@ dependencies = [
 name = "mi-assets"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "image",
  "mi-anim",
  "mi-core",

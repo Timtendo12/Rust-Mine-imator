@@ -4,8 +4,10 @@
 
 mod models;
 mod project;
+mod scenery;
 mod tree;
 
 pub use models::{ModelBindings, ModelTextures, PartBinding};
-pub use project::{Project, ProjectContext, ProjectError};
+pub use project::{Project, ProjectContext, ProjectError, ScenerySize};
+pub use scenery::{LoadedScenery, SceneryStore};
 pub use tree::Tree;

@@ -36,6 +36,7 @@ Fixes change behaviour in memory, not the layout on disk, so files stay readable
 | The inverse kinematics solver tests convergence against the wrong joint and so always runs all 30 rounds. | Stops when the end of the limb is on the target. Results are the same. |
 | Models that copy the pose of their parent model stop following paths. | Path following is kept in the pose pass. |
 | The tip of an inverted cone keeps an upward normal, so the inside of the cone is lit wrongly near the tip. | The normal is flipped with the rest. |
+| Sponge schematics store palette indices as variable length integers, but the original reads one byte per block, so schematics with more than 128 palette entries load wrong blocks. Versions 2 and 3 are refused. | Indices are decoded properly; versions 1 to 3 are read. |
 
 ## Quirks of the original kept on purpose
 
@@ -45,6 +46,7 @@ Changing these would alter how existing projects look.
 |---|---|
 | Path lengths are measured about 5% short (a loop meant to sample 0..1 stops at 0.95). | `PATH_OFFSET` keyframes are expressed in these units; correcting the length would move every object that follows a path. |
 | `matrix_build` rotates before it scales. | The timeline transform compensates for it ("resize" scaling); results are the same as in the original. |
+| Blocks with several models, random plant offsets and the integrity of structures use a random number generator seeded by position. | Kept in spirit: the choice is still stable per position, but it comes from a different generator, so the picked variants differ from the original's. |
 | Block templates are drawn turned 90° about Z ("for legacy support"), with the repeat counts of X and Y swapped to match. | Block timelines of existing projects would otherwise point the other way. |
 | With UV lock, a rotated block face takes the texture of the face whose direction it ends up in. | Matches what the original shows for rotated, UV-locked blocks. |
 | The world is left-handed (Z up; +X is to the left when looking along +Y), and a positive Z rotation turns +X towards -Y. | All saved positions and rotations depend on it. It is what makes Minecraft worlds, whose Y and Z are swapped on import, appear unmirrored. |

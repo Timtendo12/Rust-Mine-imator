@@ -26,3 +26,4 @@ serde = { workspace = true }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 thiserror = { workspace = true }
+

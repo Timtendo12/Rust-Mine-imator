@@ -2,8 +2,8 @@
 
 use crate::viewport::{ViewState, ViewportHandle};
 use mi_format::language::Language;
-use mi_assets::AssetPack;
-use mi_project::{ModelBindings, Project};
+use mi_assets::{AssetPack, LegacyBlocks};
+use mi_project::{ModelBindings, Project, SceneryStore};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Everything the application keeps between commands. The frontend never
@@ -17,6 +17,10 @@ pub struct AppState {
     pack: OnceLock<AssetPack>,
     /// Models of the open project; replaced together with the project.
     bindings: Mutex<Option<ModelBindings>>,
+    /// Numeric block ids of old schematics.
+    legacy: OnceLock<LegacyBlocks>,
+    /// Scenery of the open project; replaced together with the project.
+    scenery: Mutex<Option<SceneryStore>>,
     startup_path: Mutex<Option<String>>,
 }
 
@@ -83,14 +87,37 @@ impl AppState {
         lock(&self.bindings)
     }
 
-    /// Replaces the open project (or closes it) and binds its models.
+    pub fn set_legacy(&self, legacy: LegacyBlocks) {
+        let _ = self.legacy.set(legacy);
+    }
+
+    /// Scenery of the open project. Lock after [`AppState::bindings`] when
+    /// both are needed.
+    pub fn scenery(&self) -> MutexGuard<'_, Option<SceneryStore>> {
+        lock(&self.scenery)
+    }
+
+    /// Replaces the open project (or closes it), binds its models and
+    /// reads its scenery.
     pub fn set_project(&self, project: Option<Project>) {
         let bindings = match (&project, self.pack()) {
             (Some(project), Some(pack)) => Some(ModelBindings::bind(project, pack)),
             _ => None,
         };
+        let scenery = match (&project, self.pack()) {
+            (Some(project), Some(pack)) => {
+                let empty = LegacyBlocks::empty();
+                let store = SceneryStore::load(project, pack, self.legacy.get().unwrap_or(&empty));
+                for (id, error) in &store.errors {
+                    eprintln!("Could not load scenery {id}: {error}");
+                }
+                Some(store)
+            }
+            _ => None,
+        };
         *lock(&self.project) = project;
         *lock(&self.bindings) = bindings;
+        *lock(&self.scenery) = scenery;
     }
 
     /// Registers the viewport once it has been created.

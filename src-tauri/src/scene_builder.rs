@@ -8,7 +8,7 @@ use mi_assets::{AssetPack, BendStyle, Rgba};
 use mi_core::{Color, ObjRef, TempType, TlType, ValueId};
 use mi_format::project::{Background, Template};
 use mi_mesh::MeshData;
-use mi_project::{ModelBindings, ModelTextures, Project};
+use mi_project::{ModelBindings, ModelTextures, Project, SceneryStore};
 use mi_render::camera::CLIP_NEAR;
 use mi_render::scene::{ColorTransform, Fog, PointLight, RenderObject, RenderScene, Tonemapper};
 use mi_render::{ground_mesh, shape_mesh, Camera, MeshId, Shape, ShapeSettings, SkySettings, TextureId, WorkCamera};
@@ -28,6 +28,7 @@ pub trait SceneResources {
 pub struct SceneInputs<'a> {
     pub pack: Option<&'a AssetPack>,
     pub bindings: Option<&'a ModelBindings>,
+    pub scenery: Option<&'a SceneryStore>,
 }
 
 /// How a viewport shows the scene (`e_view_mode`, without the high quality
@@ -153,7 +154,7 @@ fn apply_material(object: &mut RenderObject, inherited: &Inherited, shape_color:
 ///
 /// Drawn so far: shapes, blocks, body parts of characters and special
 /// blocks, the textured ground, the sun, point and spot lights (as point lights, which
-/// is what the low quality modes do) and fog. Scenery, items, text and
+/// is what the low quality modes do), fog and scenery. Items, text and
 /// particles are not drawn yet.
 pub fn build_scene(
     project: &Project,
@@ -167,7 +168,9 @@ pub fn build_scene(
     let background = &file.background;
     let render = &file.render;
     let bindings = inputs.bindings;
-    let (state, order) = project.evaluate_with(marker, &|i| bindings.and_then(|b| b.part_info(i)));
+    let scenery_size = |resource: &mi_core::SaveId| inputs.scenery.and_then(|s| s.get(resource)).map(|s| s.size());
+    let (state, order) =
+        project.evaluate_with(marker, &|i| bindings.and_then(|b| b.part_info(i)), &scenery_size);
     let timelines = project.timelines();
     let bend_style = BendStyle::from_name(&render.bend_style);
 
@@ -319,16 +322,45 @@ pub fn build_scene(
                 let key = format!("block:{name}:{}:{size:?}:{randomize}", state_key.join(","));
                 let meshes = resources.meshes(key, &|| blocks.grid_meshes(pack, block, &full_state, size, randomize));
 
-                let turn = mi_anim::Mat4::build([0.0, repeat[1] * 16.0, 0.0], [0.0, 0.0, 90.0], [1.0; 3]);
-                let matrix = turn.then(&node.matrix_render).to_f32();
-                for (texture_name, mesh) in meshes {
-                    let mut object = RenderObject::new(mesh, matrix);
-                    object.texture = pack_texture(resources, Some(pack), &texture_name);
-                    apply_material(&mut object, inherited, texture_tint(Some(pack), &texture_name, background), 1.0);
-                    object.unlit = unlit;
-                    object.fog = timeline.appearance.fog;
-                    object.backfaces = timeline.appearance.backfaces;
-                    objects.push(object);
+                let matrix = block_turn(repeat[1]).then(&node.matrix_render).to_f32();
+                let look = BlockLook { pack, background, inherited, timeline, unlit };
+                push_block_objects(&mut objects, resources, &meshes, matrix, &look);
+            }
+            TlType::Scenery => {
+                let Some(pack) = inputs.pack else { continue };
+                let Some(template) = timeline.temp.as_id().and_then(|id| project.template(id)) else { continue };
+                let Some(resource) = template.scenery.as_id() else { continue };
+                let Some(loaded) = inputs.scenery.and_then(|s| s.get(resource)) else { continue };
+                if inherited.alpha <= 0.0 {
+                    continue;
+                }
+                let scenery = &loaded.scenery;
+                let key = format!("scenery:{resource}:{}:{}", loaded.timelines, loaded.randomize);
+                let meshes = resources.meshes(key, &|| scenery.meshes(pack, loaded.timelines, loaded.randomize));
+
+                let size = loaded.size();
+                let repeat = if template.block_repeat_enable {
+                    template.block_repeat.map(|r| r.round().clamp(1.0, MAX_BLOCK_REPEAT))
+                } else {
+                    [1.0; 3]
+                };
+                let copies = (repeat[0] * repeat[1] * repeat[2]) as usize;
+                if copies > MAX_SCENERY_COPIES {
+                    continue;
+                }
+                let look = BlockLook { pack, background, inherited, timeline, unlit };
+                for rx in 0..repeat[0] as usize {
+                    for ry in 0..repeat[1] as usize {
+                        for rz in 0..repeat[2] as usize {
+                            let offset =
+                                [rx as f64 * size[0] * 16.0, ry as f64 * size[1] * 16.0, rz as f64 * size[2] * 16.0];
+                            let matrix = block_turn(size[1])
+                                .then(&mi_anim::Mat4::translation(offset))
+                                .then(&node.matrix_render)
+                                .to_f32();
+                            push_block_objects(&mut objects, resources, &meshes, matrix, &look);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -361,6 +393,45 @@ pub fn build_scene(
 
 /// Largest repeat count along one axis of a block template.
 const MAX_BLOCK_REPEAT: f64 = 256.0;
+
+/// Largest number of copies of a repeated scenery that are drawn.
+const MAX_SCENERY_COPIES: usize = 4096;
+
+/// The turn every block mesh gets, "for legacy support" in the original
+/// (`render_world_block`): the builder's X runs along -Y, shifted back by
+/// the extent along Y (`size_y`, in blocks).
+fn block_turn(size_y: f64) -> mi_anim::Mat4 {
+    mi_anim::Mat4::build([0.0, size_y * 16.0, 0.0], [0.0, 0.0, 90.0], [1.0; 3])
+}
+
+/// What block objects of a timeline share.
+struct BlockLook<'a> {
+    pack: &'a AssetPack,
+    background: &'a Background,
+    inherited: &'a Inherited,
+    timeline: &'a mi_format::project::Timeline,
+    unlit: bool,
+}
+
+/// Adds an object per texture of a block mesh.
+fn push_block_objects(
+    objects: &mut Vec<RenderObject>,
+    resources: &mut dyn SceneResources,
+    meshes: &[(String, MeshId)],
+    matrix: [f32; 16],
+    look: &BlockLook,
+) {
+    let pack = look.pack;
+    for (texture_name, mesh) in meshes {
+        let mut object = RenderObject::new(*mesh, matrix);
+        object.texture = resources.texture(format!("block:{texture_name}"), &|| pack.block_texture(texture_name));
+        apply_material(&mut object, look.inherited, texture_tint(Some(pack), texture_name, look.background), 1.0);
+        object.unlit = look.unlit;
+        object.fog = look.timeline.appearance.fog;
+        object.backfaces = look.timeline.appearance.backfaces;
+        objects.push(object);
+    }
+}
 
 /// The work camera a project was saved with.
 pub fn saved_work_camera(project: &Project) -> WorkCamera {
@@ -462,7 +533,9 @@ mod tests {
         assert!(scene.objects[0].sun_only);
         let ball = &scene.objects[1];
         assert_eq!(ball.blend_color, [1.0, 0.0, 0.0, 0.5]);
-        assert_eq!(ball.model[14], 8.0);
+        // Shapes are lifted by their rotation point so they stand on
+        // their position.
+        assert_eq!(ball.model[14], 16.0);
         assert!(!ball.unlit);
 
         assert_eq!(scene.lights.len(), 1);
@@ -541,7 +614,7 @@ mod tests {
         let bindings = ModelBindings::bind(&project, &pack);
         assert_eq!(bindings.len(), 3);
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings) };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         // Ground plus the shapes of three parts, all textured.
         assert!(scene.objects.len() > 4, "{}", scene.objects.len());
@@ -571,7 +644,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys.len(), 1);
         assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
@@ -581,11 +654,61 @@ mod tests {
         // The top is tinted with the grass colour, the bottom is not.
         let tints: Vec<[f32; 4]> = scene.objects.iter().map(|o| o.blend_color).collect();
         assert!(tints.iter().any(|t| *t != [1.0; 4]) && tints.contains(&[1.0; 4]), "{tints:?}");
-        // Turned so the repeat runs 3 along X and 2 along Y from the origin.
+        // Turned so the repeat runs 3 along X and 2 along Y, centred on the
+        // timeline's position (the rotation point of block templates).
         let m = glam::Mat4::from_cols_array(&scene.objects[0].model);
         let corner = m.transform_point3(glam::Vec3::new(2.0 * 16.0, 0.0, 0.0));
-        assert!((corner - glam::Vec3::new(0.0, 0.0, 0.0)).length() < 1e-3, "{corner}");
+        assert!((corner - glam::Vec3::new(-24.0, -16.0, 0.0)).length() < 1e-3, "{corner}");
         let corner = m.transform_point3(glam::Vec3::new(0.0, 3.0 * 16.0, 0.0));
-        assert!((corner - glam::Vec3::new(48.0, 32.0, 0.0)).length() < 1e-3, "{corner}");
+        assert!((corner - glam::Vec3::new(24.0, 16.0, 0.0)).length() < 1e-3, "{corner}");
+    }
+
+    #[test]
+    fn scenery_is_drawn_turned_and_repeated() {
+        let pack = pack();
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/Data/legacy.midata");
+        let legacy = mi_assets::LegacyBlocks::load(&std::fs::read(data).unwrap(), pack.blocks());
+        // A .blocks file: two planks along X.
+        let mut bytes = vec![0, 0];
+        for size in [1u16, 2, 1] {
+            bytes.extend(size.to_be_bytes());
+        }
+        bytes.extend([5, 0, 5, 0]);
+        let scenery = mi_assets::Scenery::read(&bytes, "blocks", pack.blocks(), &legacy, Default::default()).unwrap();
+        let mut store = SceneryStore::default();
+        let loaded = mi_project::LoadedScenery { scenery: std::sync::Arc::new(scenery), timelines: true, randomize: false };
+        store.insert(SaveId::new("RES"), loaded);
+
+        let mut file = ProjectFile::new(1.0, 1.0);
+        file.background.ground_show = false;
+        let mut template = Template::new(SaveId::new("SCENERY"), TempType::Scenery);
+        template.scenery = ObjRef::id("RES");
+        template.block_repeat_enable = true;
+        template.block_repeat = [1.0, 2.0, 1.0];
+        file.objects.templates.push(template);
+        let mut tl = Timeline::new(SaveId::new("TL"), TlType::Scenery, &file.defaults);
+        tl.temp = ObjRef::id("SCENERY");
+        tl.parent_tree_index = Some(0);
+        file.objects.timelines.push(tl);
+        let project = Project::from_file(file, IdGenerator::new(3)).0;
+
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store) };
+        let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
+        assert_eq!(recorder.keys, ["scenery:RES:true:false"]);
+        // One texture, two copies along Y.
+        assert_eq!(scene.objects.len(), 2);
+        let m = glam::Mat4::from_cols_array(&scene.objects[0].model);
+        // The builder's X (two blocks) runs along -Y, its Y along +X; the
+        // whole repeat (1 x 4 blocks) is centred on the timeline.
+        let centre = glam::Vec3::new(8.0, 32.0, 0.0);
+        let p = m.transform_point3(glam::Vec3::new(32.0, 0.0, 0.0)) + centre;
+        assert!(p.length() < 1e-3, "{p}");
+        let p = m.transform_point3(glam::Vec3::new(0.0, 16.0, 0.0)) + centre;
+        assert!((p - glam::Vec3::new(16.0, 32.0, 0.0)).length() < 1e-3, "{p}");
+        // The copy starts where the first ends: the scenery is 2 blocks
+        // along Y.
+        let copy = glam::Mat4::from_cols_array(&scene.objects[1].model);
+        let p = copy.transform_point3(glam::Vec3::new(32.0, 0.0, 0.0)) + centre;
+        assert!((p - glam::Vec3::new(0.0, 32.0, 0.0)).length() < 1e-3, "{p}");
     }
 }

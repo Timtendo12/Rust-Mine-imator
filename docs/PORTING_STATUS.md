@@ -43,7 +43,7 @@ Legend: **done** · **partial** · **not started**
 | `.mimodel` | done | All bundled models parse; block and plane shape meshes incl. bending (blocky and realistic). 3D planes are generated flat. Not yet used by the viewport. |
 | Minecraft version manifest (`<version>.midata`) | not started | |
 | `legacy.midata` | not started | |
-| NBT, `.schematic`, `.nbt` structures, `.blocks` | not started | |
+| NBT, `.schematic`, `.nbt` structures, `.blocks` | done | NBT (plain and gzip), MCEdit schematics through the legacy id table, Sponge schematics versions 1–3, structures with palettes, integrity and jigsaw final states, legacy `.blocks`. Tile entity data (sign text, skull skins, banners) is not read yet. |
 | `.meshcache` | not started | Planned to be regenerated, not read |
 | Autosave backups (`.backupN`) | not started | The files themselves load as projects |
 | Zipped projects | not started | |
@@ -71,7 +71,7 @@ Legend: **done** · **partial** · **not started**
 | Keyframe lookup and per-timeline value evaluation, including seamless repeat | done |
 | Matrix and vector maths with the original conventions | done |
 | Hierarchy, inherit flags, value inheritance | done |
-| Timeline matrices (position, rotation, scale, rotation point) | done |
+| Timeline matrices (position, rotation, scale, rotation point) | done, including the default rotation point of templates (scenery, blocks, shapes, items, text); block-format models still use 0 |
 | Body part bend transform (children locked to the bent half) | done | 
 | Bending of the body part meshes themselves | not started |
 | Inverse kinematics (two-bone limbs, pole target, blend) | done |
@@ -86,14 +86,14 @@ Legend: **done** · **partial** · **not started**
 | Feature | Status |
 |---|---|
 | Minecraft asset pack loading | done (bundled 1.20.2; version switching and downloads not yet) |
-| Block states, block models, render models, connected blocks | partial: manifest blocks and ids, state defaults, variant and multipart blockstates, model parents and textures, element and variant rotation, UV lock, weighted variants, face culling between neighbours. Every state value of the bundled pack resolves. Not yet: connected blocks (`block_set_*`: fences, panes, stairs shapes, redstone), liquids, waterlogging, animated textures beyond the first frame, wind and subsurface values, resource pack block textures. |
+| Block states, block models, render models, connected blocks | partial: manifest blocks and ids, state defaults, variant and multipart blockstates, model parents and textures, element and variant rotation, UV lock, weighted variants, face culling between neighbours by texture transparency (opaque, cut-out, translucent; leaves), random offsets of plants. Every state value of the bundled pack resolves. Not yet: connected blocks (`block_set_*`: fences, panes, stairs shapes, redstone), liquids, waterlogging, animated textures beyond the first frame, wind and subsurface values, resource pack block textures. |
 | Character and special block models (`.mimodel`), states | done: states choose files, textures and hidden parts/shapes; drawn in the viewport with bending. Armour, patterns (banners), model colour palettes and 3D planes not yet. |
 | Texture atlases, animated textures, biome tints | not started |
 | Resource packs, material and normal maps | not started |
 | Skins (including download and old 64×32 layout) | not started |
 | Items, item sheets | not started |
 | Fonts and text meshes | not started |
-| Scenery from schematics and structures, block entities as timelines | not started |
+| Scenery from schematics and structures, block entities as timelines | partial: scenery files of a project are read and drawn, blocks that are timelines in the project (chests, doors, ...) are left out of the mesh. Not yet: creating those timelines when scenery is added, scenery from worlds, `.meshcache`, the "remove edges" setting, meshing on a background thread. |
 | World import (all chunk formats, preview, selection) | not started |
 
 ## Rendering
@@ -109,7 +109,8 @@ Legend: **done** · **partial** · **not started**
 | Ground | done: pack texture tinted by biome colour (resource pack ground textures not yet) |
 | Characters and special blocks | done (body parts, textured, bent) |
 | Blocks | done for block templates (with repeat and randomised variants) and block timelines of scenery; one mesh per texture, tinted like the original |
-| Scenery, items, text, paths, particles | not started |
+| Scenery | done (with repeat) |
+| Items, text, paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | not started |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |

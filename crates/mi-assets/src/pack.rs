@@ -309,6 +309,22 @@ impl AssetPack {
         let bytes = self.read(&format!("textures/{name}.png"))?;
         decode_square(&bytes)
     }
+
+    /// A block texture; of animated textures (frames stacked vertically)
+    /// only the first frame.
+    pub fn block_texture(&self, name: &str) -> Option<Rgba> {
+        let bytes = self.read(&format!("textures/{name}.png"))?;
+        let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+        let (w, h) = image.dimensions();
+        if w == 0 || h == 0 {
+            return None;
+        }
+        if h > w && h % w == 0 {
+            let pixels = image.as_raw()[..(w * w * 4) as usize].to_vec();
+            return Some(Rgba { width: w, height: w, pixels });
+        }
+        decode_square(&bytes)
+    }
 }
 
 /// An image in memory.
