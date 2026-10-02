@@ -120,6 +120,13 @@ impl AppState {
         *lock(&self.scenery) = scenery;
     }
 
+    /// Binds models and reads scenery again for the open project, after
+    /// timelines were added, removed or reordered.
+    pub fn refresh_project_assets(&self) {
+        let project = lock(&self.project).take();
+        self.set_project(project);
+    }
+
     /// Registers the viewport once it has been created.
     pub fn set_viewport(&self, handle: ViewportHandle) {
         // Set once at startup; a second call would be a programming error

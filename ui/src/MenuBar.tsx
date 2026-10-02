@@ -4,6 +4,8 @@ export interface MenuItem {
   label: string;
   /** Items without an action are shown disabled. */
   action?: () => void;
+  /** Key combination shown next to the label. */
+  shortcut?: string;
 }
 
 export interface Menu {
@@ -56,7 +58,8 @@ export function MenuBar({ menus }: { menus: Menu[] }) {
                     item.action?.();
                   }}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
                 </button>
               ))}
             </div>

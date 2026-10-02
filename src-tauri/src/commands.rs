@@ -104,9 +104,14 @@ pub struct ProjectSummary {
     /// Timelines in tree order.
     timelines: Vec<TimelineSummary>,
     warnings: Vec<String>,
+    /// Unsaved changes.
+    changed: bool,
+    /// What undo and redo would do.
+    undo: Option<String>,
+    redo: Option<String>,
 }
 
-fn summarize(project: &Project, language: &mi_format::language::Language, warnings: Vec<String>) -> ProjectSummary {
+pub(crate) fn summarize(project: &Project, language: &mi_format::language::Language, warnings: Vec<String>) -> ProjectSummary {
     let file = project.file();
     let timelines = project.timelines();
     let background = &file.background;
@@ -161,6 +166,9 @@ fn summarize(project: &Project, language: &mi_format::language::Language, warnin
             })
             .collect(),
         warnings,
+        changed: project.is_changed(),
+        undo: project.history().undo_label().map(str::to_owned),
+        redo: project.history().redo_label().map(str::to_owned),
     }
 }
 
@@ -244,7 +252,10 @@ pub struct TimelineFrame {
     world_position: [f64; 3],
     /// Visible after taking the parents into account.
     visible: bool,
+    /// Alpha after multiplying with the parents'.
     alpha: f64,
+    /// The timeline's own alpha value.
+    alpha_value: f64,
     transition: String,
 }
 
@@ -258,7 +269,7 @@ pub struct FrameState {
     active_camera: Option<String>,
 }
 
-fn frame_state(project: &Project, marker: f64) -> FrameState {
+pub(crate) fn frame_state(project: &Project, marker: f64) -> FrameState {
     use mi_core::ValueId::*;
     let (scene, order) = project.evaluate(marker);
     let timelines = order
@@ -274,6 +285,7 @@ fn frame_state(project: &Project, marker: f64) -> FrameState {
                 world_position: node.world_pos,
                 visible: node.inherited.visible,
                 alpha: node.inherited.alpha,
+                alpha_value: v.number(Alpha),
                 transition: v[Transition].as_str().unwrap_or("linear").to_owned(),
             }
         })

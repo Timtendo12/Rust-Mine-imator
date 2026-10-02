@@ -14,7 +14,7 @@ Legend: **done** · **partial** · **not started**
 | 2 | Animation: value evaluation, easing, hierarchy, matrices, bend, IK, paths | partial (see below) |
 | 3 | Assets: Minecraft pack, block and character models, atlases, schematics | partial (see below) |
 | 4 | Renderer (low quality) and viewport | partial (see below) |
-| 5 | Editor shell: docking, timeline, editors, workbench, undo | not started |
+| 5 | Editor shell: docking, timeline, editors, workbench, undo | partial (see below) |
 | 6 | Renderer (high quality) and post effects | not started |
 | 7 | Particles, audio, export | not started |
 | 8 | World import and remaining tools | not started |
@@ -56,7 +56,7 @@ Legend: **done** · **partial** · **not started**
 | Scene evaluation at a frame (values, transforms, active camera) | done, without model data: body parts have no bend or part offsets until assets are loaded |
 | Reference counting of resources | not started |
 | Save id remapping when importing | not started |
-| Undo / redo (commands replacing 821 action scripts) | not started |
+| Undo / redo (commands replacing 821 action scripts) | partial: snapshot-based history (100 steps) with merged drags; edits so far: values at the marker (with the keyframe rules of `tl_value_set`), moving and removing keyframes, renaming and hiding timelines |
 | Selection, copy / paste, duplicate | not started |
 | Timeline operations (add, remove, reparent, parts of models) | not started |
 | Keyframe operations (add, move, select, copy, transitions) | not started |
@@ -139,13 +139,14 @@ Legend: **done** · **partial** · **not started**
 |---|---|---|
 | Startup screen | partial | Recent projects with thumbnails, sort, remove, browse. No "New project", pinning or list view. |
 | Menu bar | partial | File, Edit, Render, View, Help as in the original; only open, close and navigation work, the rest is shown disabled |
-| Properties panel | partial | Project settings, render, library, environment and resources sections, read-only |
+| Properties panel | partial | Project settings, render, library, environment and resources sections, read-only. The selected timeline's position, rotation, scale and alpha can be typed or dragged |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
-| Timeline (read-only) | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, values of the selected timeline at the current frame. No editing, markers, regions or audio. |
+| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. No markers, regions, audio, box selection or copy and paste. |
 | Docking panels, pop-out windows | not started | |
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom. No second view, tools, overlays or selection. |
-| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | not started | |
+| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframe moving and removing; reparenting, markers, regions and audio clips not yet |
+| Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Backups, autosave and the thumbnail are not written yet |
 | Properties tabs (project, render, library, background, resources) | not started | |
 | Template editor, timeline editor, frame editor | not started | |
 | Ground editor | not started | |

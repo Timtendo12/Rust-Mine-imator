@@ -2,6 +2,7 @@
 //! frontend through commands. The frontend only holds view state.
 
 mod commands;
+mod editing;
 mod recent;
 mod scene_builder;
 mod state;
@@ -82,7 +83,16 @@ pub fn run() {
             commands::viewport_drag,
             commands::viewport_zoom,
             commands::viewport_reset_camera,
-            commands::set_view_options
+            commands::set_view_options,
+            editing::set_timeline_values,
+            editing::finish_edit,
+            editing::move_keyframes,
+            editing::remove_keyframes,
+            editing::rename_timeline,
+            editing::set_timelines_hidden,
+            editing::undo,
+            editing::redo,
+            editing::save_project
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");

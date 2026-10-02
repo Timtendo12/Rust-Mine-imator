@@ -260,7 +260,9 @@ kbd {
 }
 
 .menu-list button {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
   width: 100%;
   padding: 6px 14px;
   background: transparent;
@@ -523,6 +525,13 @@ input[type="range"] {
   background: var(--accent);
 }
 
+.keyframe.selected,
+.track.selected .keyframe.selected {
+  background: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .playhead {
   position: absolute;
   top: 0;
@@ -708,4 +717,81 @@ input[type="range"] {
   .zoom {
     display: none;
   }
+}
+
+/* ---- Editing ---- */
+
+.menu-shortcut {
+  color: var(--muted);
+}
+
+.keyframe {
+  touch-action: none;
+}
+
+.timeline-row .rename {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  background: var(--input, #111);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  font: inherit;
+}
+
+.row-eye {
+  flex: none;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.row-eye.off {
+  opacity: 0.5;
+}
+
+.vector-input {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.number-input {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: var(--input, #111);
+  border: 1px solid var(--border);
+}
+
+.number-input:focus-within {
+  border-color: var(--accent);
+}
+
+.number-label {
+  flex: none;
+  padding: 3px 5px;
+  color: var(--muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.number-label:hover {
+  color: var(--accent);
+}
+
+.number-input input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 3px 4px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  outline: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
 }

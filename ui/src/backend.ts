@@ -73,6 +73,11 @@ export interface ProjectSummary {
   /** In tree order: every parent is followed by its children. */
   timelines: TimelineSummary[];
   warnings: string[];
+  /** Unsaved changes. */
+  changed: boolean;
+  /** What undo and redo would do, if anything. */
+  undo: string | null;
+  redo: string | null;
 }
 
 export type Vec3 = [number, number, number];
@@ -84,7 +89,10 @@ export interface TimelineFrame {
   scale: Vec3;
   worldPosition: Vec3;
   visible: boolean;
+  /** After multiplying with the parents' alpha. */
   alpha: number;
+  /** The timeline's own alpha value. */
+  alphaValue: number;
   transition: string;
 }
 
@@ -127,3 +135,52 @@ export const viewportResetCamera = () => invoke<void>("viewport_reset_camera");
 
 export const setViewOptions = (mode: ViewMode, timelineCamera: boolean) =>
   invoke<void>("set_view_options", { mode, timelineCamera });
+
+// Editing. Every edit answers with the project and the current frame as
+// they are afterwards.
+
+export interface Edited {
+  project: ProjectSummary;
+  frame: FrameState;
+}
+
+export interface KeyframeKey {
+  timeline: string;
+  position: number;
+}
+
+/** A number value by its name in project files, such as `POS_X`. */
+export interface NumberEdit {
+  name: string;
+  value: number;
+}
+
+/**
+ * Changes values of timelines at the current frame, adding a keyframe there
+ * if needed. Edits with the same `merge` key in a row are one undo step and
+ * each starts from the values before the first, so a drag sends its total
+ * offset with mode "add".
+ */
+export const setTimelineValues = (timelines: string[], values: NumberEdit[], mode: "set" | "add", merge: string | null = null) =>
+  invoke<Edited>("set_timeline_values", { timelines, values, mode, merge });
+
+/** Ends a drag, so the next edit is an undo step of its own. */
+export const finishEdit = () => invoke<void>("finish_edit");
+
+/** Moves keyframes `offset` frames from where they were when the drag began. */
+export const moveKeyframes = (keys: KeyframeKey[], offset: number, merge: string | null = null) =>
+  invoke<Edited & { moved: KeyframeKey[] }>("move_keyframes", { keys, offset, merge });
+
+export const removeKeyframes = (keys: KeyframeKey[]) => invoke<Edited>("remove_keyframes", { keys });
+
+export const renameTimeline = (id: string, name: string) => invoke<Edited>("rename_timeline", { id, name });
+
+export const setTimelinesHidden = (timelines: string[], hidden: boolean) =>
+  invoke<Edited>("set_timelines_hidden", { timelines, hidden });
+
+export const undo = () => invoke<Edited>("undo");
+
+export const redo = () => invoke<Edited>("redo");
+
+/** Saves to the project's file, or to `path` (save as). */
+export const saveProject = (path: string | null = null) => invoke<Edited>("save_project", { path });

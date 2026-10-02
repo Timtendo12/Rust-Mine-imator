@@ -35,13 +35,14 @@ pub enum ProjectError {
 #[derive(Debug, Clone)]
 pub struct Project {
     path: Option<PathBuf>,
-    file: ProjectFile,
+    pub(crate) file: ProjectFile,
     tree: Tree,
     timeline_index: HashMap<SaveId, usize>,
     template_index: HashMap<SaveId, usize>,
     resource_index: HashMap<SaveId, usize>,
     ids: IdGenerator,
-    changed: bool,
+    pub(crate) changed: bool,
+    pub(crate) history: crate::history::History,
 }
 
 /// Settings of the environment a project is opened in.
@@ -93,12 +94,19 @@ impl Project {
             resource_index: HashMap::new(),
             ids,
             changed: false,
+            history: Default::default(),
         };
         project.rebuild_indices();
         (project, warnings)
     }
 
-    fn rebuild_indices(&mut self) {
+    /// Rebuilds the timeline tree after timelines or parents changed.
+    pub(crate) fn rebuild_tree(&mut self) {
+        // Repairs were reported when the project was opened.
+        self.tree = Tree::build(&self.file.objects.timelines).0;
+    }
+
+    pub(crate) fn rebuild_indices(&mut self) {
         let objects = &self.file.objects;
         self.timeline_index = objects.timelines.iter().enumerate().map(|(i, t)| (t.id.clone(), i)).collect();
         self.template_index = objects.templates.iter().enumerate().map(|(i, t)| (t.id.clone(), i)).collect();
