@@ -7,7 +7,7 @@
 - The [Tauri 2 prerequisites](https://tauri.app/start/prerequisites/):
   - Windows: Microsoft C++ Build Tools and WebView2 (preinstalled on Windows 11)
   - macOS: Xcode command line tools
-  - Linux: `webkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2` development packages
+  - Linux: `webkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2` and `libasound2` (ALSA, for sound playback) development packages
 
 No other native libraries need to be built. (The original needs Qt, FFmpeg, OpenAL and libzip
 compiled from source; this rewrite uses Rust crates instead.)
