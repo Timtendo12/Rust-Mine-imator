@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 mi-anim = { workspace = true }
 mi-assets = { workspace = true }
+mi-audio = { workspace = true }
 mi-core = { workspace = true }
 mi-format = { workspace = true }
 mi-mesh = { workspace = true }
@@ -23,6 +24,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 mi-project = { workspace = true }
 mi-render = { workspace = true }
 pollster = "0.4"
+rodio = { version = "0.20", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2", features = ["macos-private-api"] }

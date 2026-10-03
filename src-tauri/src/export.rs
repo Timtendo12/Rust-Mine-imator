@@ -29,13 +29,15 @@ impl Format {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MovieOptions {
     pub format: Format,
     pub frames_per_second: f64,
     /// As the original's export dialog gives it; the encoder gets five
     /// times this, as in the original.
     pub bit_rate: u64,
+    /// A sound file to put into the video.
+    pub audio: Option<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -93,7 +95,18 @@ pub fn ffmpeg_args(options: &MovieOptions, width: u32, height: u32, path: &Path)
     };
     let mut args: Vec<String> = ["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba"].map(String::from).into();
     args.extend(["-s".into(), format!("{width}x{height}"), "-r".into(), format!("{}", options.frames_per_second)]);
-    args.extend(["-i", "-", "-an", "-c:v", codec].map(String::from));
+    args.extend(["-i", "-"].map(String::from));
+    match &options.audio {
+        Some(audio) => {
+            // 320 kbit/s like the original: AAC, or Windows Media Audio
+            // in "wmv" files.
+            let audio_codec = if container == "asf" { "wmav2" } else { "aac" };
+            args.extend(["-i".into(), audio.to_string_lossy().into_owned()]);
+            args.extend(["-c:a", audio_codec, "-b:a", "320k"].map(String::from));
+        }
+        None => args.push("-an".into()),
+    }
+    args.extend(["-c:v", codec].map(String::from));
     args.extend(["-b:v".into(), (options.bit_rate * 5).to_string(), "-g".into(), "12".into()]);
     if codec == "libx264" {
         args.extend(["-tune", "zerolatency"].map(String::from));
@@ -248,13 +261,21 @@ mod tests {
 
     #[test]
     fn encoder_settings() {
-        let options = MovieOptions { format: Format::Mp4, frames_per_second: 30.0, bit_rate: 2_500_000 };
+        let options = MovieOptions { format: Format::Mp4, frames_per_second: 30.0, bit_rate: 2_500_000, audio: None };
         let args = ffmpeg_args(&options, 1280, 720, Path::new("a.mp4")).join(" ");
         assert!(args.contains("-f rawvideo -pix_fmt rgba -s 1280x720 -r 30 -i -"), "{args}");
         assert!(args.contains("-c:v libx264 -b:v 12500000 -g 12 -tune zerolatency"), "{args}");
         assert!(args.ends_with("-pix_fmt yuv420p -f mp4 a.mp4"), "{args}");
-        let wmv = ffmpeg_args(&MovieOptions { format: Format::Wmv, ..options }, 2, 2, Path::new("a.wmv")).join(" ");
+        let wmv = ffmpeg_args(&MovieOptions { format: Format::Wmv, ..options.clone() }, 2, 2, Path::new("a.wmv")).join(" ");
         assert!(wmv.contains("-c:v msmpeg4") && wmv.ends_with("-f asf a.wmv") && !wmv.contains("zerolatency"), "{wmv}");
+        // Without sound the video has no audio stream; with it the sound
+        // file is a second input.
+        assert!(args.contains("-i - -an -c:v"), "{args}");
+        let sound = MovieOptions { audio: Some(PathBuf::from("mix.wav")), ..options.clone() };
+        let with_sound = ffmpeg_args(&sound, 2, 2, Path::new("a.mp4")).join(" ");
+        assert!(with_sound.contains("-i - -i mix.wav -c:a aac -b:a 320k -c:v libx264"), "{with_sound}");
+        let wma = ffmpeg_args(&MovieOptions { format: Format::Wmv, ..sound }, 2, 2, Path::new("a.wmv")).join(" ");
+        assert!(wma.contains("-c:a wmav2"), "{wma}");
         assert_eq!(Format::from_name("mov"), Some(Format::Mov));
         assert_eq!(Format::from_name("gif"), None);
     }
@@ -268,7 +289,7 @@ mod tests {
     fn image_sequences_stop_when_cancelled() {
         let dir = temp_dir("png");
         let path = dir.join("clip.png");
-        let options = MovieOptions { format: Format::Png, frames_per_second: 24.0, bit_rate: 0 };
+        let options = MovieOptions { format: Format::Png, frames_per_second: 24.0, bit_rate: 0, audio: None };
         let markers = frame_markers(0.0, 11.0, 24.0, 24.0);
         let outcome = export(&options, &path, (4, 2), &markers, 11, |m| solid(4, 2, m), |_| true).unwrap();
         assert_eq!(outcome, Outcome::Done);
@@ -297,15 +318,26 @@ mod tests {
         let dir = temp_dir("video");
         let markers = frame_markers(0.0, 11.0, 24.0, 24.0);
         for (format, name) in [(Format::Mp4, "clip.mp4"), (Format::Mov, "clip.mov"), (Format::Wmv, "clip.wmv")] {
-            let options = MovieOptions { format, frames_per_second: 24.0, bit_rate: 350_000 };
+            let options = MovieOptions { format, frames_per_second: 24.0, bit_rate: 350_000, audio: None };
             let path = dir.join(name);
             // An odd size, which the encoder pads.
             let outcome = export(&options, &path, (33, 18), &markers, 11, |m| solid(33, 18, m), |_| true).unwrap();
             assert_eq!(outcome, Outcome::Done);
             assert!(std::fs::metadata(&path).unwrap().len() > 500, "{name}");
         }
+        // With sound the video gets an audio stream.
+        let wav = dir.join("mix.wav");
+        std::fs::write(&wav, mi_audio::wav_bytes(&[0.25, -0.25].repeat(22_050))).unwrap();
+        let options = MovieOptions { format: Format::Mp4, frames_per_second: 24.0, bit_rate: 350_000, audio: Some(wav) };
+        let path = dir.join("sound.mp4");
+        export(&options, &path, (32, 18), &markers, 11, |m| solid(32, 18, m), |_| true).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        // The sound track is announced by an "mp4a" sample entry.
+        assert!(bytes.windows(4).any(|w| w == b"mp4a"));
+        assert!(!std::fs::read(dir.join("clip.mp4")).unwrap().windows(4).any(|w| w == b"mp4a"));
+
         // The encoder's own message is reported when it cannot write.
-        let options = MovieOptions { format: Format::Mp4, frames_per_second: 24.0, bit_rate: 350_000 };
+        let options = MovieOptions { format: Format::Mp4, frames_per_second: 24.0, bit_rate: 350_000, audio: None };
         let missing = dir.join("no-such-folder").join("clip.mp4");
         let error = export(&options, &missing, (32, 18), &markers, 11, |m| solid(32, 18, m), |_| true).unwrap_err();
         assert!(matches!(error, ExportError::Encoder(ref message) if !message.is_empty()), "{error:?}");

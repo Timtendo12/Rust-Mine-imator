@@ -76,6 +76,8 @@ interface Props {
   onCreateText: () => void;
   /** Asks for a file and adds it as scenery. */
   onCreateScenery: () => void;
+  /** Asks for a sound file and adds it at the playhead. */
+  onCreateAudio: () => void;
   /** Moves timelines under `parent` (the root for null) at `index` among its other children, or at the end. */
   onReparent: (ids: string[], parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -396,6 +398,7 @@ export function Timeline(props: Props) {
                 onCreateItem={props.onCreateItem}
                 onCreateText={props.onCreateText}
                 onCreateScenery={props.onCreateScenery}
+                onCreateAudio={props.onCreateAudio}
                 onClose={() => setCreating(null)}
               />
             )}
@@ -545,6 +548,16 @@ export function Timeline(props: Props) {
                   if (!e.ctrlKey && !e.metaKey && !e.shiftKey) props.onSelectKeyframes([]);
                 }}
               >
+                {timeline.lengths.map(
+                  (length, i) =>
+                    length > 0 && (
+                      <span
+                        key={`clip-${timeline.keyframes[i]}`}
+                        className="clip"
+                        style={{ left: frameX(timeline.keyframes[i]), width: length * zoom }}
+                      />
+                    ),
+                )}
                 {timeline.keyframes.map((position) => {
                   const key = { timeline: timeline.id, position };
                   return (

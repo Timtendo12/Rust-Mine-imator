@@ -50,6 +50,8 @@ pub struct Project {
     /// they are read from where they were picked and copied next to the
     /// project when it is saved (`load_folder` in the original).
     pub(crate) resource_sources: HashMap<SaveId, PathBuf>,
+    /// Lengths of the sound resources that have been decoded.
+    pub(crate) sound_seconds: HashMap<SaveId, f64>,
     pub(crate) changed: bool,
     pub(crate) history: crate::history::History,
 }
@@ -112,6 +114,7 @@ impl Project {
             resource_index: HashMap::new(),
             ids,
             resource_sources: HashMap::new(),
+            sound_seconds: HashMap::new(),
             changed: false,
             history: Default::default(),
         };
@@ -388,10 +391,15 @@ impl Project {
         }
     }
 
-    /// Frame of the last keyframe (`tl_update_length`). Audio clips will
-    /// extend this once sounds can be loaded.
+    /// Frame the animation ends at (`tl_update_length`): the last keyframe,
+    /// or the end of the last sound.
     pub fn length(&self) -> i64 {
-        self.timelines().iter().filter_map(|tl| tl.keyframes.last()).map(|k| k.position).max().unwrap_or(0)
+        // Sounds last beyond their keyframe (`tl_update_length`).
+        self.timelines()
+            .iter()
+            .flat_map(|tl| tl.keyframes.iter().map(move |k| k.position + self.keyframe_length(tl, k).ceil() as i64))
+            .max()
+            .unwrap_or(0)
     }
 
     /// A playhead at `marker` with the project's loop settings.

@@ -34,6 +34,7 @@ export function ExportDialog({ project, onClose, onError }: Props) {
   const [customQuality, setCustomQuality] = useState(false);
   const [frameRate, setFrameRate] = useState(30);
   const [customRate, setCustomRate] = useState(false);
+  const [includeAudio, setIncludeAudio] = useState(true);
   const [progress, setProgress] = useState<{ frame: number; total: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
@@ -55,7 +56,7 @@ export function ExportDialog({ project, onClose, onError }: Props) {
     setResult(null);
     setProgress({ frame: 0, total: 0 });
     try {
-      const done = await exportMovie(path, format, frameRate, bitRate);
+      const done = await exportMovie(path, format, frameRate, bitRate, includeAudio);
       setResult(done.cancelled ? `Stopped after ${done.frames} frames.` : `Exported ${done.frames} frames.`);
     } catch (e) {
       setProgress(null);
@@ -133,6 +134,12 @@ export function ExportDialog({ project, onClose, onError }: Props) {
                   value={frameRate}
                   onChange={(e) => setFrameRate(Math.min(120, Math.max(1, Math.round(Number(e.target.value)) || 1)))}
                 />
+              </label>
+            )}
+            {format !== "png" && (
+              <label className="modal-check">
+                <input type="checkbox" checked={includeAudio} onChange={(e) => setIncludeAudio(e.target.checked)} />
+                Include audio
               </label>
             )}
             <p className="modal-note">

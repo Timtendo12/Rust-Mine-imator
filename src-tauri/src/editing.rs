@@ -567,6 +567,29 @@ pub fn create_scenery(path: String, state: State<'_, AppState>) -> Result<Create
     Ok(Created { edited, created: vec![id.to_string()] })
 }
 
+/// Adds a sound file at the current frame: to the first audio timeline
+/// among `timelines` (the selection), or to a new one. The file is decoded
+/// first, so that one that is no sound adds nothing.
+#[tauri::command(async)]
+pub fn create_audio(path: String, timelines: Vec<String>, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let file = Path::new(&path);
+    let bytes = std::fs::read(file).map_err(|e| CommandError::Invalid(format!("{path}: {e}")))?;
+    let extension = file.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    mi_audio::decode(bytes, extension.as_deref()).map_err(|e| CommandError::Invalid(format!("{path}: {e}")))?;
+
+    let marker = state.view().marker.round() as i64;
+    let id = {
+        let mut guard = state.project();
+        let project = guard.as_mut().ok_or(CommandError::NoProject)?;
+        project.create_audio(file, marker, &ids(&timelines))
+    };
+    // Its length shows on the timeline.
+    state.load_new_sounds();
+    let (_, edited) = change(&state, |_| ())?;
+    state.refresh_project_assets();
+    Ok(Created { edited, created: vec![id.to_string()] })
+}
+
 /// Adds a text object with the sample text.
 #[tauri::command]
 pub fn create_text(state: State<'_, AppState>) -> Result<Created, CommandError> {

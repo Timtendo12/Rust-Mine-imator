@@ -210,7 +210,7 @@ impl Project {
     /// where it is until the project is saved, which copies it next to the
     /// project; a different file of the same name gets a number, like
     /// `house (2).schematic`.
-    fn add_resource(edit: &mut Edit, source: &std::path::Path, kind: ResType, setup: impl FnOnce(&mut Resource)) -> SaveId {
+    pub(crate) fn add_resource(edit: &mut Edit, source: &std::path::Path, kind: ResType, setup: impl FnOnce(&mut Resource)) -> SaveId {
         let name = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let project = edit.project();
         let existing = project.resources().iter().find(|r| {

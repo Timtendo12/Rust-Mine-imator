@@ -27,6 +27,10 @@ pub struct AppState {
     selection: Mutex<Vec<mi_core::SaveId>>,
     /// Copied keyframes; kept when another project is opened, as in the original.
     clipboard: Mutex<mi_project::KeyframeClipboard>,
+    /// Decoded sounds of the open project.
+    sounds: Mutex<crate::audio::Sounds>,
+    /// Plays the sounds along with the animation.
+    player: crate::audio::Player,
     /// Set to stop the export that is running.
     cancel_export: std::sync::atomic::AtomicBool,
     startup_path: Mutex<Option<String>>,
@@ -131,9 +135,32 @@ impl AppState {
             }
             _ => None,
         };
+        self.player.stop();
         *lock(&self.project) = project;
         *lock(&self.bindings) = bindings;
         *lock(&self.scenery) = scenery;
+        *lock(&self.sounds) = Default::default();
+        self.load_new_sounds();
+    }
+
+    /// Decodes the sounds of resources that were added to the open project.
+    /// Returns what could not be decoded.
+    pub fn load_new_sounds(&self) -> Vec<String> {
+        let mut guard = lock(&self.project);
+        let Some(project) = guard.as_mut() else { return Vec::new() };
+        let errors = lock(&self.sounds).load_missing(project);
+        for error in &errors {
+            eprintln!("Could not load sound {error}");
+        }
+        errors
+    }
+
+    pub fn sounds(&self) -> MutexGuard<'_, crate::audio::Sounds> {
+        lock(&self.sounds)
+    }
+
+    pub fn player(&self) -> &crate::audio::Player {
+        &self.player
     }
 
     /// Binds models again after timelines were added, removed or

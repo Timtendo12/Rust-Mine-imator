@@ -14,7 +14,7 @@ const BASIC: [CreatableKind, string][] = [
   ["surface", "Surface"],
 ];
 
-type Category = "basic" | "characters" | "specialBlocks" | "blocks" | "items";
+type Category = "basic" | "characters" | "specialBlocks" | "blocks" | "items" | "files";
 
 const CATEGORIES: [Category, string][] = [
   ["basic", "Basic"],
@@ -22,6 +22,7 @@ const CATEGORIES: [Category, string][] = [
   ["specialBlocks", "Special block"],
   ["blocks", "Block"],
   ["items", "Item"],
+  ["files", "From a file"],
 ];
 
 // The lists come from the asset pack and do not change while running.
@@ -39,6 +40,7 @@ interface Props {
   onCreateItem: (name: string) => void;
   onCreateText: () => void;
   onCreateScenery: () => void;
+  onCreateAudio: () => void;
   onClose: () => void;
 }
 
@@ -82,7 +84,11 @@ export function Workbench(props: Props) {
   if (category === "basic") {
     entries = BASIC.map(([kind, label]) => ({ key: kind, label, action: () => onCreate(kind) }));
     entries.push({ key: "text", label: "Text", action: props.onCreateText });
-    entries.push({ key: "scenery", label: "Scenery from a file…", action: props.onCreateScenery });
+  } else if (category === "files") {
+    entries = [
+      { key: "scenery", label: "Scenery (schematic, structure)…", action: props.onCreateScenery },
+      { key: "audio", label: "Sound…", action: props.onCreateAudio },
+    ];
   } else {
     const list = items?.[category] ?? [];
     const create = category === "blocks" ? onCreateBlock : category === "items" ? onCreateItem : onCreateModel;
@@ -117,11 +123,11 @@ export function Workbench(props: Props) {
         ))}
       </div>
       <div className="workbench-items">
-        {category !== "basic" && (
+        {category !== "basic" && category !== "files" && (
           <input autoFocus type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
         <div className="workbench-list">
-          {category !== "basic" && !items && <p className="muted">Loading…</p>}
+          {category !== "basic" && category !== "files" && !items && <p className="muted">Loading…</p>}
           {shown.map((entry) => (
             <button key={entry.key} onClick={() => pick(entry.action)}>
               {entry.label}

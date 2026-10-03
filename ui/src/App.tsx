@@ -4,9 +4,12 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
   addMarker,
   appInfo,
+  audioPlay,
+  audioStop,
   backupProject,
   closeProject,
   copyKeyframes,
+  createAudio,
   createBlock,
   createItem,
   createScenery,
@@ -197,12 +200,14 @@ export function App() {
     let startTime = performance.now();
     let startMarker = marker >= (repeating ? loopEnd : project.length) ? (repeating ? loopStart : 0) : marker;
     let handle = 0;
+    void audioPlay(startMarker);
     const tick = () => {
       let next = startMarker + ((performance.now() - startTime) / 1000) * project.tempo;
       if (repeating && next >= loopEnd) {
         startTime = performance.now();
         startMarker = loopStart;
         next = loopStart;
+        void audioPlay(loopStart);
       } else if (!repeating && project.length > 0 && next >= project.length) {
         setMarker(project.length);
         setPlaying(false);
@@ -212,7 +217,10 @@ export function App() {
       handle = requestAnimationFrame(tick);
     };
     handle = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(handle);
+    return () => {
+      cancelAnimationFrame(handle);
+      void audioStop();
+    };
     // The marker is only read when playback starts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, project]);
@@ -316,6 +324,15 @@ export function App() {
     },
     [run, setSelected],
   );
+
+  /** Asks for a sound file and adds it at the playhead. */
+  const addAudio = useCallback(async () => {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Sound", extensions: ["mp3", "ogg", "wav", "flac", "m4a"] }],
+    });
+    if (typeof path === "string") await create(() => createAudio(path, selection));
+  }, [create, selection]);
 
   /** Asks for a schematic or structure file and adds it as scenery. */
   const addScenery = useCallback(async () => {
@@ -629,6 +646,7 @@ export function App() {
             onCreateItem={(name) => void create(() => createItem(name))}
             onCreateText={() => void create(createText)}
             onCreateScenery={() => void addScenery()}
+            onCreateAudio={() => void addAudio()}
             onReparent={(ids, parent, index) => void run(() => reparentTimelines(ids, parent, index))}
             onPlay={setPlaying}
           />

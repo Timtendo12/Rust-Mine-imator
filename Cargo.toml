@@ -12,6 +12,7 @@ repository = "https://github.com/Timtendo12/Rust-Mine-imator"
 mi-core = { path = "crates/mi-core" }
 mi-anim = { path = "crates/mi-anim" }
 mi-assets = { path = "crates/mi-assets" }
+mi-audio = { path = "crates/mi-audio" }
 mi-format = { path = "crates/mi-format" }
 mi-mesh = { path = "crates/mi-mesh" }
 mi-project = { path = "crates/mi-project" }

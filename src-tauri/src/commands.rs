@@ -64,6 +64,9 @@ pub struct TimelineSummary {
     part: bool,
     /// Frames that have a keyframe.
     keyframes: Vec<i64>,
+    /// For audio timelines: how many frames the sound of each keyframe
+    /// lasts (0 while it is not known). Empty for other timelines.
+    lengths: Vec<f64>,
     hidden: bool,
 }
 
@@ -201,6 +204,11 @@ pub(crate) fn summarize(project: &Project, language: &mi_format::language::Langu
                     index: project.tree().index_in_parent(i),
                     part: !tl.part_of.is_null(),
                     keyframes: tl.keyframes.iter().map(|k| k.position).collect(),
+                    lengths: if tl.kind == TlType::Audio {
+                        tl.keyframes.iter().map(|k| project.keyframe_length(tl, k)).collect()
+                    } else {
+                        Vec::new()
+                    },
                     hidden: tl.hide,
                 }
             })
@@ -325,6 +333,7 @@ pub fn export_movie(
     format: String,
     frames_per_second: f64,
     bit_rate: u64,
+    include_audio: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Exported, CommandError> {
@@ -334,7 +343,8 @@ pub fn export_movie(
 
     let failed = |reason: String| CommandError::Write { path: path.clone(), reason };
     let format = Format::from_name(&format).ok_or_else(|| CommandError::Invalid(format!("unknown export format {format}")))?;
-    let options = MovieOptions { format, frames_per_second: frames_per_second.clamp(1.0, 120.0), bit_rate: bit_rate.max(1) };
+    let mut options =
+        MovieOptions { format, frames_per_second: frames_per_second.clamp(1.0, 120.0), bit_rate: bit_rate.max(1), audio: None };
     // The region is exported if there is one, else everything.
     let (size, tempo, start, end) = {
         let guard = state.project();
@@ -343,6 +353,20 @@ pub fn export_movie(
         let (start, end) = project.region().unwrap_or((0, project.length()));
         ((info.video_width.max(1.0) as u32, info.video_height.max(1.0) as u32), info.tempo.max(1.0), start as f64, end as f64)
     };
+    // The sounds of the exported stretch, mixed into a file for the encoder.
+    let mut mix_file = None;
+    if include_audio && format != Format::Png {
+        let guard = state.project();
+        let project = guard.as_ref().ok_or(CommandError::NoProject)?;
+        let sounds = state.sounds();
+        if sounds.any(project) {
+            let file = std::env::temp_dir().join(format!("mine-imator-export-{}.wav", std::process::id()));
+            let wav = mi_audio::wav_bytes(&sounds.mix(project, start, end, false));
+            std::fs::write(&file, wav).map_err(|e| failed(format!("the sound could not be prepared: {e}")))?;
+            options.audio = Some(file.clone());
+            mix_file = Some(file);
+        }
+    }
     let viewport = state.viewport().ok_or_else(|| failed("the viewport is not running".into()))?;
     let markers = export::frame_markers(start, end, tempo, options.frames_per_second);
     let sequence_total = export::sequence_total(start, end, tempo, options.frames_per_second);
@@ -369,10 +393,41 @@ pub fn export_movie(
     );
     state.update_view(|view| view.marker = previous);
     state.redraw();
+    if let Some(file) = mix_file {
+        let _ = std::fs::remove_file(file);
+    }
     match result.map_err(|e| failed(e.to_string()))? {
         Outcome::Done => Ok(Exported { frames: total, cancelled: false }),
         Outcome::Cancelled => Ok(Exported { frames: done, cancelled: true }),
     }
+}
+
+/// Plays the sounds of the animation from frame `marker` on, replacing
+/// what is playing.
+#[tauri::command]
+pub fn audio_play(marker: f64, state: State<'_, AppState>) {
+    let samples = {
+        let guard = state.project();
+        let Some(project) = guard.as_ref() else { return };
+        let sounds = state.sounds();
+        if !sounds.any(project) {
+            return;
+        }
+        sounds.mix(project, marker.max(0.0), project.length() as f64, false)
+    };
+    state.player().play(samples);
+}
+
+#[tauri::command]
+pub fn audio_stop(state: State<'_, AppState>) {
+    state.player().stop();
+}
+
+/// The waveform of a sound resource: the loudest sample of each of
+/// `buckets` equal stretches.
+#[tauri::command]
+pub fn sound_peaks(resource: String, buckets: usize, state: State<'_, AppState>) -> Option<Vec<f32>> {
+    state.sounds().peaks(&mi_core::SaveId::new(&resource), buckets.clamp(1, 4096))
 }
 
 /// Stops the export that is running after the frame it is at.

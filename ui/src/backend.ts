@@ -24,6 +24,8 @@ export interface TimelineSummary {
   part: boolean;
   /** Frames that have a keyframe, ascending. */
   keyframes: number[];
+  /** For audio timelines: frames the sound of each keyframe lasts. Empty otherwise. */
+  lengths: number[];
   hidden: boolean;
 }
 
@@ -343,8 +345,17 @@ export type MovieFormat = "mp4" | "mov" | "wmv" | "png";
  * Renders the whole animation at the project's size into a video, or into
  * numbered images for "png". Progress arrives as `export-progress` events.
  */
-export const exportMovie = (path: string, format: MovieFormat, framesPerSecond: number, bitRate: number) =>
-  invoke<{ frames: number; cancelled: boolean }>("export_movie", { path, format, framesPerSecond, bitRate });
+export const exportMovie = (path: string, format: MovieFormat, framesPerSecond: number, bitRate: number, includeAudio: boolean) =>
+  invoke<{ frames: number; cancelled: boolean }>("export_movie", { path, format, framesPerSecond, bitRate, includeAudio });
+
+/** Plays the sounds of the animation from a frame on, replacing what is playing. */
+export const audioPlay = (marker: number) => invoke<void>("audio_play", { marker });
+
+export const audioStop = () => invoke<void>("audio_stop");
+
+/** Adds a sound file at the current frame, to a selected audio timeline or a new one. */
+export const createAudio = (path: string, timelines: string[]) =>
+  invoke<Edited & { created: string[] }>("create_audio", { path, timelines });
 
 /** Stops the running export after the frame it is at. */
 export const cancelExport = () => invoke<void>("cancel_export");

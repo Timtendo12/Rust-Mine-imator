@@ -1,6 +1,7 @@
 //! Tauri application: owns the application state and exposes it to the
 //! frontend through commands. The frontend only holds view state.
 
+mod audio;
 mod commands;
 mod editing;
 mod frame_editor;
@@ -106,6 +107,9 @@ pub fn run() {
             commands::export_image,
             commands::export_movie,
             commands::cancel_export,
+            commands::audio_play,
+            commands::audio_stop,
+            commands::sound_peaks,
             commands::viewport_gizmo,
             editing::set_timeline_values,
             editing::finish_edit,
@@ -136,6 +140,7 @@ pub fn run() {
             editing::create_item,
             editing::create_scenery,
             editing::create_text,
+            editing::create_audio,
             editing::set_model_skin,
             editing::project_settings,
             editing::set_setting,

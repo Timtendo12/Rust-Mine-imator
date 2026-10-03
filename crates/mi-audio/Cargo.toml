@@ -1,0 +1,10 @@
+[package]
+name = "mi-audio"
+description = "Mine-imator: decoding and mixing of sounds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm", "flac", "aac", "isomp4"] }
+thiserror = { workspace = true }

@@ -131,9 +131,9 @@ Legend: **done** · **partial** · **not started**
 |---|---|
 | Particle simulation (deterministic, seeded) | not started |
 | Particle editor | not started |
-| Audio decoding, playback, waveforms | not started |
+| Audio decoding, playback, waveforms | partial: sound resources (MP3, Ogg Vorbis, WAV, FLAC, AAC) decoded to 44.1 kHz stereo; audio timelines with sound keyframes (volume, pitch, start, end as in `tl_keyframe_length`); added from the workbench; played along with the animation as one mix; shown as clips on the timeline. Not yet: waveforms in the clips, resizing clips by dragging, WMA files |
 | Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
-| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. The region is exported when there is one. Not yet: audio, high quality, hidden objects, removing the background, watermark, remembering the settings |
+| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. The region is exported when there is one, with its sounds mixed in (AAC, or WMA in wmv, 320 kbit/s). Not yet: high quality, hidden objects, removing the background, watermark, remembering the settings |
 
 ## User interface
 
@@ -144,17 +144,17 @@ Legend: **done** · **partial** · **not started**
 | Properties panel | partial | Project settings (name, author, description, render size, tempo), render settings (samples, distance, main effects), environment (time, rotation, clouds, ground, twilight, fog, wind, scene colours, texture speed) are editable with undo; library and resources are read-only. The selected timeline has a frame editor with every number, switch, colour, choice and text value its type supports (position, rotation, scale, bend, colour, surface, light, camera effects, background, text, visibility and transition), grouped like the original's; values that point at other objects (textures, paths, IK targets, sounds) and the bezier handles are not editable yet. Its settings that are not animated can be switched too: what it inherits from its parent, appearance options, and lock and hide flags |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
-| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). Region (right drag on the ruler, edges dragged), repeat modes, markers (added at the playhead, dragged, edited by double click). No audio or box selection. |
+| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). Region (right drag on the ruler, edges dragged), repeat modes, markers (added at the playhead, dragged, edited by double click). Sound clips. No box selection. |
 | Docking panels, pop-out windows | not started | |
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move and rotate tools. No second view or overlays. |
-| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes, reparenting, markers and regions; audio clips not yet |
+| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes, reparenting, markers, regions and sound clips (not resizable by dragging yet) |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |
 | Properties tabs (project, render, library, background, resources) | partial | Project, render and background settings are edited in the properties panel; library and resources only list what the project has |
 | Template editor, timeline editor, frame editor | partial | Frame editor: all number, switch, colour, choice and text values of the selected timelines, by group. Timeline editor: inherit, appearance and lock switches. Not yet: values that refer to other objects (textures, paths, IK targets, sounds), the bezier curve editor, the template editor |
 | Ground editor | not started | |
 | Settings (program, interface, controls) | not started | |
-| Workbench and placing objects | partial | Workbench with search for basic objects, text, scenery files, characters, special blocks, blocks and items; new objects appear at the origin instead of being placed with the mouse |
+| Workbench and placing objects | partial | Workbench with search for basic objects, text, scenery and sound files, characters, special blocks, blocks and items; new objects appear at the origin instead of being placed with the mouse |
 | Toolbar menus, context menus, tooltips, toasts, shortcut bar | not started | |
 | Popups (new project, save as, export, skin download, pattern and armour editors, ...) | partial | Export animation; saving and opening use the system dialogs |
 | Themes and accent colours, interface scale | not started | |
