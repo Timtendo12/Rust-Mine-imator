@@ -1,11 +1,11 @@
-// World geometry in the high quality mode: lit per pixel by the sun, with
-// its shadows, and by point lights; one sample of the progressive render.
-// Ported from shader_high_light_sun, shader_high_lighting_apply and
-// shader_tonemap, drawn in one pass instead of composited from separate
-// surfaces. Not ported yet: shadows of point and spot lights, subsurface
+// World geometry in the high quality mode: lit per pixel by the sun, point
+// lights and spot lights, with their shadows; one sample of the progressive
+// render. Ported from shader_high_light_sun, shader_high_light_point,
+// shader_high_light_spot, shader_high_light_point_shadowless,
+// shader_high_lighting_apply and shader_tonemap, drawn in one pass instead
+// of composited from separate surfaces. Not ported yet: subsurface
 // scattering, material and normal maps.
 
-const MAX_LIGHTS: u32 = 64u;
 const PI: f32 = 3.14159265;
 const CASCADES: u32 = 3u;
 
@@ -48,6 +48,27 @@ struct Shadows {
     params: vec4<f32>,
 }
 
+struct Light {
+    // xyz: position, w: range
+    position: vec4<f32>,
+    // rgb: colour times strength, a: share of the range it fades out over
+    color: vec4<f32>,
+    // x: specular strength, y: spot sharpness, z: 1 for spot lights,
+    // w: its shadow map, or -1 without shadows
+    params: vec4<f32>,
+    // xyz: where the shadow is cast from (moved within the light's size)
+    shadow_position: vec4<f32>,
+    // The cone of a spot light, and the view its shadow map was drawn with.
+    cone: mat4x4<f32>,
+    shadow: mat4x4<f32>,
+}
+
+struct Lights {
+    // x: number of lights
+    count: vec4<f32>,
+    lights: array<Light, 64>,
+}
+
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var<uniform> object: Object;
 @group(2) @binding(0) var base_texture: texture_2d<f32>;
@@ -55,6 +76,10 @@ struct Shadows {
 @group(3) @binding(0) var<uniform> shadows: Shadows;
 @group(3) @binding(1) var shadow_maps: texture_depth_2d_array;
 @group(3) @binding(2) var shadow_sampler: sampler_comparison;
+@group(3) @binding(3) var<uniform> lights: Lights;
+@group(3) @binding(4) var spot_maps: texture_depth_2d_array;
+@group(3) @binding(5) var point_maps: texture_depth_cube_array;
+@group(3) @binding(6) var point_sampler: sampler;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -227,6 +252,94 @@ fn sun_shadow(position: vec3<f32>, view_depth: f32) -> f32 {
     return textureSampleCompareLevel(shadow_maps, shadow_sampler, coord.xy, cascade, coord.z - shadows.bias[cascade]);
 }
 
+// The distance from a light along its view for a depth of its shadow map
+// (near plane at 1).
+fn light_distance(depth: f32, far: f32) -> f32 {
+    return far / (far - depth * (far - 1.0));
+}
+
+// Diffuse light (rgb) of the point and spot lights at a point, and their
+// highlights through `specular`.
+fn placed_lights(
+    position: vec3<f32>,
+    n: vec3<f32>,
+    v: vec3<f32>,
+    albedo: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    specular: ptr<function, vec3<f32>>,
+) -> vec3<f32> {
+    var total = vec3<f32>(0.0);
+    let count = min(u32(lights.count.x), 64u);
+    for (var i = 0u; i < count; i++) {
+        let light = lights.lights[i];
+        let range = light.position.w;
+        let offset = light.position.xyz - position;
+        let away = length(offset);
+        if (away > range) {
+            continue;
+        }
+        let l = offset / max(away, 0.0001);
+        var dif = max(0.0, dot(n, l));
+        // It fades out over the last part of its range.
+        let fade = max(light.color.a, 0.0001);
+        dif *= 1.0 - clamp((away - range * (1.0 - fade)) / (range * fade), 0.0, 1.0);
+        if (dif <= 0.0) {
+            continue;
+        }
+
+        let slot = i32(light.params.w);
+        var shadow = 1.0;
+        if (light.params.z > 0.5) {
+            // Spot light: a circle around its direction, soft at the edge.
+            let cone = light.cone * vec4<f32>(position, 1.0);
+            if (cone.w <= 0.0) {
+                continue;
+            }
+            let at = (vec2<f32>(cone.x, -cone.y) / cone.w + 1.0) * 0.5;
+            if (at.x <= 0.0 || at.y <= 0.0 || at.x >= 1.0 || at.y >= 1.0) {
+                continue;
+            }
+            let sharpness = light.params.y;
+            dif *= 1.0 - clamp((distance(at, vec2<f32>(0.5)) - 0.5 * sharpness) / (0.5 * max(0.01, 1.0 - sharpness)), 0.0, 1.0);
+            if (dif <= 0.0) {
+                continue;
+            }
+            if (slot >= 0) {
+                let seen = light.shadow * vec4<f32>(position, 1.0);
+                let uv = (vec2<f32>(seen.x, -seen.y) / seen.w + 1.0) * 0.5;
+                if (seen.w > 0.0 && uv.x > 0.0 && uv.y > 0.0 && uv.x < 1.0 && uv.y < 1.0) {
+                    let size = vec2<f32>(textureDimensions(spot_maps));
+                    let stored = textureLoad(spot_maps, vec2<i32>(uv * size), slot, 0);
+                    if (min(seen.w, range) - 1.0 > light_distance(stored, range)) {
+                        shadow = 0.0;
+                    }
+                }
+            }
+        } else if (slot >= 0) {
+            // Point light: the map of the side of the cube the point is on.
+            let from_light = position - light.shadow_position.xyz;
+            let along = max(max(abs(from_light.x), abs(from_light.y)), abs(from_light.z));
+            let stored = textureSampleLevel(point_maps, point_sampler, from_light, slot, 0);
+            if (along - 1.0 > light_distance(stored, range)) {
+                shadow = 0.0;
+            }
+        }
+        if (shadow <= 0.0) {
+            continue;
+        }
+
+        total += light.color.rgb * dif;
+        let h = normalize(v + l);
+        let ndf = distribution_ggx(n, h, roughness);
+        let g = geometry_smith(n, v, l, roughness);
+        let f = fresnel_schlick_roughness(max(dot(h, v), 0.0), metallic, roughness);
+        let amount = ndf * g * f / (4.0 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0) + 0.0001);
+        *specular += light.color.rgb * light.params.x * dif * amount * mix(vec3<f32>(1.0), albedo, metallic);
+    }
+    return total;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let base = in.color * textureSample(base_texture, base_sampler, in.uv);
@@ -278,18 +391,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         specular = sun_color * dif * shadow * amount * mix(vec3<f32>(1.0), albedo, metallic);
     }
 
-    // Point lights, without shadows. The ground takes the sun only.
-    var count = min(u32(frame.tone.w), MAX_LIGHTS);
-    if (object.flags.y > 0.5) {
-        count = min(count, 1u);
-    }
-    for (var i = 1u; i < count; i++) {
-        let data1 = frame.lights[i * 2u];
-        let data2 = frame.lights[i * 2u + 1u];
-        let attenuation = max(0.0, 1.0 - distance(in.position, data1.xyz) / data1.w);
-        let to_light = normalize(data1.xyz - in.position);
-        light += data2.rgb * max(0.0, dot(n, to_light)) * attenuation;
-    }
+    light += placed_lights(in.position, n, v, albedo, roughness, metallic, &specular);
 
     // Metals have no diffuse light, and what is reflected is not diffused.
     let diffuse = light * (1.0 - metallic) * (1.0 - fresnel) + emissive;

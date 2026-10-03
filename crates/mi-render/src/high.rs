@@ -3,13 +3,14 @@
 //! its disc, and the samples are averaged. That smooths edges and softens
 //! shadows the longer the view stays the same.
 //!
-//! Ported so far: sun shadows in three cascades, lighting per pixel with
-//! specular highlights, and the sample average. See
+//! Ported so far: sun shadows in three cascades, point and spot lights
+//! with their shadows, lighting per pixel with specular highlights, and
+//! the sample average. See
 //! `docs/PORTING_STATUS.md` for what is missing.
 
 use crate::camera::Camera;
 use crate::renderer::{FrameUniform, Renderer, Viewport, DEPTH_FORMAT};
-use crate::scene::{Layer, RenderObject, RenderScene};
+use crate::scene::{Layer, PointLight, RenderObject, RenderScene};
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3, Vec4};
 use mi_mesh::Vertex;
@@ -28,6 +29,14 @@ const CASCADE_ENDS: [f32; CASCADES + 1] = [0.0, 0.035, 0.15, 1.0];
 /// Shadows reach at most this far from the camera.
 const SHADOW_DISTANCE: f32 = 7500.0;
 
+/// Lights the high quality mode shades with.
+pub const MAX_LIGHTS: usize = 64;
+/// Spot lights that can cast shadows at once; further ones shine without.
+/// (The original has no limit: it draws every light in a pass of its own.)
+pub const SPOT_SHADOWS: usize = 8;
+/// Point lights that can cast shadows at once.
+pub const POINT_SHADOWS: usize = 4;
+
 /// Settings of the high quality mode, from the project's render settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HighSettings {
@@ -41,11 +50,24 @@ pub struct HighSettings {
     pub antialiasing_power: f32,
     /// Size of the sun's disc in degrees, which softens its shadows.
     pub sun_angle: f32,
+    /// Width and height of the shadow map of a spot light, and of each
+    /// side of a point light's.
+    pub spot_buffer_size: u32,
+    pub point_buffer_size: u32,
 }
 
 impl Default for HighSettings {
     fn default() -> Self {
-        Self { samples: 24, shadows: true, sun_buffer_size: 2048, antialiasing: true, antialiasing_power: 1.0, sun_angle: 0.526 }
+        Self {
+            samples: 24,
+            shadows: true,
+            sun_buffer_size: 2048,
+            antialiasing: true,
+            antialiasing_power: 1.0,
+            sun_angle: 0.526,
+            spot_buffer_size: 512,
+            point_buffer_size: 256,
+        }
     }
 }
 
@@ -166,6 +188,60 @@ struct ShadowUniform {
     params: [f32; 4],
 }
 
+/// Where a light's shadow is cast from for a sample: after the first
+/// samples it is moved within the light's size, which softens the shadow.
+pub fn sample_light_position(position: Vec3, sample: u32, size: f32) -> Vec3 {
+    if sample <= 1 {
+        return position;
+    }
+    let around = halton(sample, 11) * std::f32::consts::TAU;
+    let tilt = (halton(sample, 13) * 2.0 - 1.0) * std::f32::consts::PI;
+    position + Vec3::new(around.cos() * tilt.cos(), -around.sin() * tilt.cos(), tilt.sin()) * (size / 2.0)
+}
+
+/// The views a point light's shadow is drawn with: the six sides of a cube
+/// map, in the order and orientation cube maps are sampled in.
+pub fn cube_views(from: Vec3, range: f32) -> [Mat4; 6] {
+    let projection = Mat4::perspective_lh(std::f32::consts::FRAC_PI_2, 1.0, 1.0, range.max(2.0));
+    let sides = [
+        (Vec3::X, Vec3::Y),
+        (-Vec3::X, Vec3::Y),
+        (Vec3::Y, -Vec3::Z),
+        (-Vec3::Y, Vec3::Z),
+        (Vec3::Z, Vec3::Y),
+        (-Vec3::Z, Vec3::Y),
+    ];
+    sides.map(|(look, up)| projection * Mat4::look_at_lh(from, from + look, up))
+}
+
+/// The view of a spot light from `from`.
+pub fn spot_view(from: Vec3, light: &PointLight) -> Mat4 {
+    let cone = light.spot.expect("a spot light");
+    let position = Vec3::from(light.position);
+    let direction = (Vec3::from(cone.to) - position).normalize_or(Vec3::Y);
+    let up = if direction.cross(Vec3::Z).length_squared() < 1e-6 { Vec3::Y } else { Vec3::Z };
+    let projection = Mat4::perspective_lh(cone.radius.clamp(1.0, 179.0).to_radians(), 1.0, 1.0, light.range.max(2.0));
+    projection * Mat4::look_at_lh(from, from + direction, up)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct LightUniform {
+    position: [f32; 4],
+    color: [f32; 4],
+    params: [f32; 4],
+    shadow_position: [f32; 4],
+    cone: [f32; 16],
+    shadow: [f32; 16],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct LightsUniform {
+    count: [f32; 4],
+    lights: [LightUniform; MAX_LIGHTS],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct ResolveUniform {
@@ -199,13 +275,27 @@ pub(crate) struct High {
     resolve_layout: wgpu::BindGroupLayout,
     shadow_buffer: wgpu::Buffer,
     shadow_sampler: wgpu::Sampler,
-    /// The cascades' maps, their size, and the group they are bound with.
-    shadow_maps: Option<(u32, [wgpu::TextureView; CASCADES], wgpu::BindGroup)>,
-    /// A frame uniform and its bind group per cascade.
-    cascade_frames: [(wgpu::Buffer, wgpu::BindGroup); CASCADES],
+    lights_buffer: wgpu::Buffer,
+    point_sampler: wgpu::Sampler,
+    shadow_maps: Option<ShadowMaps>,
+    /// A frame uniform and its bind group per view a shadow map is drawn
+    /// from: the cascades, then the spot lights, then the sides of the
+    /// point lights.
+    shadow_frames: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
     /// Views being rendered, by size: the viewport and an export can go on
     /// side by side.
     targets: Vec<Target>,
+}
+
+/// The shadow maps: of the sun's cascades, of spot lights and of point
+/// lights, with the group they are bound with.
+struct ShadowMaps {
+    sizes: [u32; 3],
+    sun: [wgpu::TextureView; CASCADES],
+    spot: Vec<wgpu::TextureView>,
+    /// Six sides per point light.
+    point: Vec<wgpu::TextureView>,
+    bind: wgpu::BindGroup,
 }
 
 const ATTRIBUTES: [wgpu::VertexAttribute; 5] =
@@ -254,6 +344,42 @@ impl High {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(size_of::<LightsUniform>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::CubeArray,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],
@@ -430,20 +556,28 @@ impl High {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        let cascade_frames = std::array::from_fn(|_| {
+        let lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("light uniforms"),
+            size: size_of::<LightsUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let point_sampler = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("point shadow sampler"), ..Default::default() });
+        let shadow_frames = (0..CASCADES + SPOT_SHADOWS + POINT_SHADOWS * 6).map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("cascade frame uniforms"),
+                label: Some("shadow view frame uniforms"),
                 size: size_of::<FrameUniform>() as u64,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
             let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("cascade frame"),
+                label: Some("shadow view frame"),
                 layout: &renderer.frame_layout,
                 entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
             });
             (buffer, bind)
         });
+        let shadow_frames = shadow_frames.collect();
 
         Self {
             pipeline_cull,
@@ -457,49 +591,70 @@ impl High {
             resolve_layout,
             shadow_buffer,
             shadow_sampler,
+            lights_buffer,
+            point_sampler,
             shadow_maps: None,
-            cascade_frames,
+            shadow_frames,
             targets: Vec::new(),
         }
     }
 
-    /// The shadow maps in the given size.
-    fn ensure_shadow_maps(&mut self, device: &wgpu::Device, size: u32) {
-        if self.shadow_maps.as_ref().is_some_and(|(have, ..)| *have == size) {
+    /// The shadow maps in the given sizes (sun, spot, point).
+    fn ensure_shadow_maps(&mut self, device: &wgpu::Device, sizes: [u32; 3]) {
+        if self.shadow_maps.as_ref().is_some_and(|maps| maps.sizes == sizes) {
             return;
         }
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("sun shadow maps"),
-            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: CASCADES as u32 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: SHADOW_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let layers = std::array::from_fn(|layer| {
+        let texture = |label, size: u32, layers: usize| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: layers as u32 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: SHADOW_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+        };
+        let layer = |texture: &wgpu::Texture, layer: usize| {
             texture.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2),
                 base_array_layer: layer as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
             })
-        });
-        let all = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
+        };
+        let whole = |texture: &wgpu::Texture, dimension| {
+            texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(dimension), ..Default::default() })
+        };
+        let sun = texture("sun shadow maps", sizes[0], CASCADES);
+        let spot = texture("spot light shadow maps", sizes[1], SPOT_SHADOWS);
+        let point = texture("point light shadow maps", sizes[2], POINT_SHADOWS * 6);
+        let (sun_all, spot_all, point_all) = (
+            whole(&sun, wgpu::TextureViewDimension::D2Array),
+            whole(&spot, wgpu::TextureViewDimension::D2Array),
+            whole(&point, wgpu::TextureViewDimension::CubeArray),
+        );
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shadows"),
             layout: &self.shadow_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: self.shadow_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&all) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&sun_all) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler) },
+                wgpu::BindGroupEntry { binding: 3, resource: self.lights_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&spot_all) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&point_all) },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&self.point_sampler) },
             ],
         });
-        self.shadow_maps = Some((size, layers, bind));
+        self.shadow_maps = Some(ShadowMaps {
+            sizes,
+            sun: std::array::from_fn(|i| layer(&sun, i)),
+            spot: (0..SPOT_SHADOWS).map(|i| layer(&spot, i)).collect(),
+            point: (0..POINT_SHADOWS * 6).map(|i| layer(&point, i)).collect(),
+            bind,
+        });
     }
 
     /// The textures of a view of the given size; at most two views are kept.
@@ -537,6 +692,14 @@ impl High {
         self.targets.push(target);
         self.targets.len() - 1
     }
+}
+
+/// A shadow map to draw into.
+#[derive(Clone, Copy)]
+enum MapTarget {
+    Sun(usize),
+    Spot(usize),
+    Point(usize),
 }
 
 /// Whether an object casts a shadow: solid things do; the sky, the clouds
@@ -661,15 +824,27 @@ impl Renderer {
         }
         self.queue.write_buffer(&self.frame_buffer, 0, bytemuck::bytes_of(&frame));
 
-        // Shadows: the scene as the sun sees it, once per cascade.
+        // Shadows: the scene as the sun and the lights see it. Every view
+        // gets a frame uniform of its own, as all are drawn in one go.
         let sun_up = scene.lighting.sun_color.iter().any(|&c| c > 0.0);
-        let shadows_on = settings.shadows && sun_up;
-        let size = settings.sun_buffer_size.clamp(16, 8192);
-        high.ensure_shadow_maps(&self.device, size);
+        let sizes = [
+            settings.sun_buffer_size.clamp(16, 8192),
+            settings.spot_buffer_size.clamp(16, 4096),
+            settings.point_buffer_size.clamp(16, 2048),
+        ];
+        high.ensure_shadow_maps(&self.device, sizes);
+        // (frame uniform, target of the maps) of every view to draw.
+        let mut views: Vec<(usize, MapTarget)> = Vec::new();
+        let view_frame = |slot: usize, view_proj: Mat4| {
+            let mut uniform = frame;
+            uniform.view_proj = view_proj.to_cols_array();
+            self.queue.write_buffer(&high.shadow_frames[slot].0, 0, bytemuck::bytes_of(&uniform));
+        };
+
         let mut shadow = ShadowUniform::zeroed();
-        if shadows_on {
+        if settings.shadows && sun_up {
             let to_sun = sample_sun_direction(scene.lighting.sun_direction, count, settings.sun_angle, scene.camera.far);
-            let all = cascades(&scene.camera, aspect, to_sun, size);
+            let all = cascades(&scene.camera, aspect, to_sun, sizes[0]);
             // Clip space to texture coordinates: y points down in textures.
             let to_texture = Mat4::from_translation(Vec3::new(0.5, 0.5, 0.0)) * Mat4::from_scale(Vec3::new(0.5, -0.5, 1.0));
             for (i, cascade) in all.iter().enumerate() {
@@ -677,41 +852,89 @@ impl Renderer {
                 shadow.ends[i] = cascade.end;
                 // One unit for the nearest cascade, more for the coarser ones.
                 shadow.bias[i] = (1.0 + i as f32 * 2.0) / cascade.depth_range;
-                let mut cascade_frame = frame;
-                cascade_frame.view_proj = cascade.view_proj.to_cols_array();
-                self.queue.write_buffer(&high.cascade_frames[i].0, 0, bytemuck::bytes_of(&cascade_frame));
+                view_frame(i, cascade.view_proj);
+                views.push((i, MapTarget::Sun(i)));
             }
             shadow.params[0] = 1.0;
         }
         self.queue.write_buffer(&high.shadow_buffer, 0, bytemuck::bytes_of(&shadow));
 
-        let (_, layers, shadow_bind) = high.shadow_maps.as_ref().expect("made above");
-        if shadows_on {
-            for (i, layer) in layers.iter().enumerate() {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("sun shadow"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: layer,
-                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                pass.set_pipeline(&high.pipeline_shadow);
-                pass.set_bind_group(0, &high.cascade_frames[i].1, &[]);
-                for (n, object) in drawable.iter().enumerate() {
-                    if !casts_shadow(object) {
-                        continue;
+        // Point and spot lights; the first ones that cast shadows get a map.
+        let mut lights = LightsUniform::zeroed();
+        let (mut spots, mut points) = (0, 0);
+        for (i, light) in scene.lights.iter().take(MAX_LIGHTS).enumerate() {
+            let position = Vec3::from(light.position);
+            let from = sample_light_position(position, count, light.size);
+            let mut uniform = LightUniform {
+                position: [position.x, position.y, position.z, light.range],
+                color: [light.color[0], light.color[1], light.color[2], light.fade_size],
+                params: [light.specular, 0.0, 0.0, -1.0],
+                shadow_position: [from.x, from.y, from.z, 0.0],
+                cone: Mat4::IDENTITY.to_cols_array(),
+                shadow: Mat4::IDENTITY.to_cols_array(),
+            };
+            let shadows = settings.shadows && light.shadows;
+            match light.spot {
+                Some(cone) => {
+                    uniform.params[1] = cone.sharpness;
+                    uniform.params[2] = 1.0;
+                    uniform.cone = spot_view(position, light).to_cols_array();
+                    if shadows && spots < SPOT_SHADOWS {
+                        let view = spot_view(from, light);
+                        uniform.shadow = view.to_cols_array();
+                        uniform.params[3] = spots as f32;
+                        view_frame(CASCADES + spots, view);
+                        views.push((CASCADES + spots, MapTarget::Spot(spots)));
+                        spots += 1;
                     }
-                    let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
-                    let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
-                    pass.set_bind_group(1, &self.object_bind, &[(n as u64 * self.object_stride) as u32]);
-                    pass.set_bind_group(2, texture, &[]);
-                    pass.set_vertex_buffer(0, mesh.buffer.slice(..));
-                    pass.draw(0..mesh.vertex_count, 0..1);
                 }
+                None if shadows && points < POINT_SHADOWS => {
+                    uniform.params[3] = points as f32;
+                    for (side, view) in cube_views(from, light.range).into_iter().enumerate() {
+                        let slot = CASCADES + SPOT_SHADOWS + points * 6 + side;
+                        view_frame(slot, view);
+                        views.push((slot, MapTarget::Point(points * 6 + side)));
+                    }
+                    points += 1;
+                }
+                None => {}
+            }
+            lights.lights[i] = uniform;
+        }
+        lights.count[0] = scene.lights.len().min(MAX_LIGHTS) as f32;
+        self.queue.write_buffer(&high.lights_buffer, 0, bytemuck::bytes_of(&lights));
+
+        let maps = high.shadow_maps.as_ref().expect("made above");
+        let shadow_bind = &maps.bind;
+        for (slot, map) in &views {
+            let view = match *map {
+                MapTarget::Sun(i) => &maps.sun[i],
+                MapTarget::Spot(i) => &maps.spot[i],
+                MapTarget::Point(i) => &maps.point[i],
+            };
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow map"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&high.pipeline_shadow);
+            pass.set_bind_group(0, &high.shadow_frames[*slot].1, &[]);
+            for (n, object) in drawable.iter().enumerate() {
+                if !casts_shadow(object) {
+                    continue;
+                }
+                let Some(mesh) = &self.meshes[object.mesh.0] else { continue };
+                let texture = object.texture.and_then(|t| self.textures.get(t.0)).unwrap_or(&self.white);
+                pass.set_bind_group(1, &self.object_bind, &[(n as u64 * self.object_stride) as u32]);
+                pass.set_bind_group(2, texture, &[]);
+                pass.set_vertex_buffer(0, mesh.buffer.slice(..));
+                pass.draw(0..mesh.vertex_count, 0..1);
             }
         }
 

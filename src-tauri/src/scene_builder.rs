@@ -61,6 +61,8 @@ pub fn high_settings(project: &Project) -> mi_render::HighSettings {
         antialiasing: render.aa,
         antialiasing_power: render.aa_power as f32,
         sun_angle: project.file().background.sunlight_angle as f32,
+        spot_buffer_size: render.shadows_spot_buffer_size.clamp(16.0, 4096.0) as u32,
+        point_buffer_size: render.shadows_point_buffer_size.clamp(16.0, 2048.0) as u32,
     }
 }
 
@@ -462,10 +464,21 @@ pub fn build_scene(
                 if timeline.kind != TlType::Camera {
                     let color = rgb(node.values[ValueId::LightColor].as_color().unwrap_or(Color::WHITE));
                     let strength = node.values.number(ValueId::LightStrength) as f32;
+                    // A spot light shines along its local +Y.
+                    let spot = (timeline.kind == TlType::SpotLight).then(|| mi_render::SpotCone {
+                        to: node.matrix.transform_point([0.0001, 1.0, 0.0]).map(|v| v as f32),
+                        radius: node.values.number(ValueId::LightSpotRadius) as f32,
+                        sharpness: node.values.number(ValueId::LightSpotSharpness) as f32,
+                    });
                     lights.push(PointLight {
                         position: node.world_pos.map(|v| v as f32),
                         range: node.values.number(ValueId::LightRange) as f32,
                         color: color.map(|c| c * strength),
+                        fade_size: node.values.number(ValueId::LightFadeSize) as f32,
+                        specular: node.values.number(ValueId::LightSpecularStrength) as f32,
+                        size: node.values.number(ValueId::LightSize) as f32,
+                        shadows: timeline.appearance.shadows,
+                        spot,
                     });
                 }
             }

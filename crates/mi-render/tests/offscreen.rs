@@ -183,7 +183,7 @@ fn point_lights_brighten_what_they_reach() {
     s.lighting = SkySettings { sky_time: 180.0, ..Default::default() }.lighting();
     let dark = centre(&render(&gpu, &mut renderer, &s));
 
-    s.lights.push(PointLight { position: [0.0, -30.0, 0.0], range: 100.0, color: [1.0, 1.0, 1.0] });
+    s.lights.push(PointLight::new([0.0, -30.0, 0.0], 100.0, [1.0, 1.0, 1.0]));
     let lit = centre(&render(&gpu, &mut renderer, &s));
     assert!(brightness(lit) > brightness(dark) + 200, "dark {dark:?}, lit {lit:?}");
 
@@ -435,4 +435,79 @@ fn high_quality_gathers_samples_and_casts_sun_shadows() {
         seen.len()
     };
     assert!(colours(&smooth) > colours(&hard) * 2, "{} {}", colours(&smooth), colours(&hard));
+}
+
+#[test]
+fn high_quality_lights_shine_in_their_range_and_cone_and_cast_shadows() {
+    use mi_render::{HighSettings, SpotCone};
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+
+    // At night: a cube floating over a floor, and a wall behind them.
+    let floor_model = Mat4::from_translation(Vec3::new(0.0, 0.0, -20.0)) * Mat4::from_scale(Vec3::new(20.0, 20.0, 0.1));
+    let wall_model = Mat4::from_translation(Vec3::new(0.0, 60.0, 0.0)) * Mat4::from_scale(Vec3::new(20.0, 0.1, 20.0));
+    let objects = vec![
+        RenderObject::new(cube, floor_model.to_cols_array()),
+        RenderObject::new(cube, wall_model.to_cols_array()),
+        RenderObject::new(cube, translation(0.0, 0.0, 0.0)),
+    ];
+    let mut s = scene(objects);
+    s.lighting = SkySettings { sky_time: 180.0, ..Default::default() }.lighting();
+    s.camera.from = Vec3::new(0.0, -150.0, 120.0);
+    s.camera.to = Vec3::new(0.0, 0.0, -20.0);
+    let pixel_of = |world: Vec3| {
+        let clip = s.camera.view_projection(1.0) * world.extend(1.0);
+        let ndc = clip.truncate() / clip.w;
+        (((ndc.x * 0.5 + 0.5) * SIZE as f32) as u32, ((0.5 - ndc.y * 0.5) * SIZE as f32) as u32)
+    };
+    let target = OffscreenTarget::new(&gpu.device, &gpu.queue, &renderer, SIZE, SIZE);
+    let settings = HighSettings { samples: 2, sun_buffer_size: 256, ..Default::default() };
+    let shot = |renderer: &mut Renderer, scene: &RenderScene, world: Vec3| {
+        while renderer.render_high(&target.color, target.viewport(), scene, &settings) {}
+        let (x, y) = pixel_of(world);
+        brightness(pixel(&target.read_rgba().unwrap(), x, y))
+    };
+    let under = Vec3::new(0.0, 0.0, -19.2);
+    let beside = Vec3::new(50.0, 0.0, -19.2);
+    let dark = shot(&mut renderer, &s, beside);
+
+    // A point light above the cube lights the floor around it and leaves
+    // the cube's shadow under it.
+    let above = PointLight::new([0.0, 0.0, 60.0], 300.0, [1.0, 1.0, 1.0]);
+    s.lights = vec![above];
+    let lit = shot(&mut renderer, &s, beside);
+    let shaded = shot(&mut renderer, &s, under);
+    assert!(lit > dark + 150, "dark {dark}, lit {lit}");
+    assert!(lit > shaded + 150, "lit {lit}, shaded {shaded}");
+    // Set not to cast shadows, it lights the floor under the cube too.
+    s.lights[0].shadows = false;
+    assert!(shot(&mut renderer, &s, under) > shaded + 150);
+    // Beyond its range there is no light.
+    s.lights[0].range = 30.0;
+    assert!(shot(&mut renderer, &s, beside) < dark + 12);
+
+    // The shadow falls sideways too: a light in front of the cube leaves
+    // its shadow on the wall behind it.
+    s.lights = vec![PointLight::new([0.0, -60.0, 0.0], 400.0, [1.0, 1.0, 1.0])];
+    let wall_lit = shot(&mut renderer, &s, Vec3::new(70.0, 59.0, 30.0));
+    let wall_shaded = shot(&mut renderer, &s, Vec3::new(0.0, 59.0, 14.0));
+    assert!(wall_lit > wall_shaded + 100, "lit {wall_lit}, shaded {wall_shaded}");
+
+    // A spot light pointing down lights a circle and nothing outside it.
+    let cone = SpotCone { to: [0.0, 0.0, -20.0], radius: 40.0, sharpness: 0.9 };
+    let mut spot = PointLight::new([40.0, 0.0, 60.0], 300.0, [1.0, 1.0, 1.0]);
+    spot.spot = Some(SpotCone { to: [40.0, 0.0, -20.0], ..cone });
+    s.lights = vec![spot];
+    let inside = shot(&mut renderer, &s, Vec3::new(45.0, 0.0, -19.2));
+    let outside = shot(&mut renderer, &s, Vec3::new(-60.0, 0.0, -19.2));
+    assert!(inside > outside + 150, "inside {inside}, outside {outside}");
+    assert!(outside < dark + 12);
+    // Its shadow: over the cube, the floor below stays dark.
+    s.lights[0].position = [0.0, 0.0, 60.0];
+    s.lights[0].spot = Some(cone);
+    let ring = shot(&mut renderer, &s, Vec3::new(18.0, 0.0, -19.2));
+    let shaded = shot(&mut renderer, &s, under);
+    assert!(ring > shaded + 150, "ring {ring}, shaded {shaded}");
+    s.lights[0].shadows = false;
+    assert!(shot(&mut renderer, &s, under) > shaded + 150);
 }

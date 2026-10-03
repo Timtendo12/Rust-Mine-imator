@@ -148,13 +148,41 @@ impl RenderObject {
     }
 }
 
-/// A point light.
+/// The cone of a spot light.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpotCone {
+    /// A point it shines towards.
+    pub to: [f32; 3],
+    /// Opening angle in degrees.
+    pub radius: f32,
+    /// 1 has a hard edge, 0 fades from the middle.
+    pub sharpness: f32,
+}
+
+/// A point or spot light. The low quality modes use its position, range
+/// and colour only, and treat spot lights as point lights.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointLight {
     pub position: [f32; 3],
     pub range: f32,
     /// Colour multiplied by strength.
     pub color: Rgb,
+    /// Share of the range over which it fades out.
+    pub fade_size: f32,
+    /// Strength of its highlights.
+    pub specular: f32,
+    /// Size of the light, which softens its shadows.
+    pub size: f32,
+    /// Casts shadows in the high quality mode.
+    pub shadows: bool,
+    pub spot: Option<SpotCone>,
+}
+
+impl PointLight {
+    /// A point light with the settings of a new light timeline.
+    pub fn new(position: [f32; 3], range: f32, color: Rgb) -> Self {
+        Self { position, range, color, fade_size: 0.5, specular: 1.0, size: 2.0, shadows: true, spot: None }
+    }
 }
 
 /// Distance fog.
