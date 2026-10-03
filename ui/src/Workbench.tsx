@@ -37,11 +37,14 @@ interface Props {
   onCreateModel: (name: string) => void;
   onCreateBlock: (name: string) => void;
   onCreateItem: (name: string) => void;
+  onCreateText: () => void;
+  onCreateScenery: () => void;
   onClose: () => void;
 }
 
 /** The workbench: picks something to add to the scene. */
-export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onCreateItem, onClose }: Props) {
+export function Workbench(props: Props) {
+  const { anchor, onCreate, onCreateModel, onCreateBlock, onCreateItem, onClose } = props;
   const [category, setCategory] = useState<Category>("basic");
   const [items, setItems] = useState<WorkbenchItems | null>(null);
   const [search, setSearch] = useState("");
@@ -78,6 +81,8 @@ export function Workbench({ anchor, onCreate, onCreateModel, onCreateBlock, onCr
   let entries: { key: string; label: string; action: () => void }[];
   if (category === "basic") {
     entries = BASIC.map(([kind, label]) => ({ key: kind, label, action: () => onCreate(kind) }));
+    entries.push({ key: "text", label: "Text", action: props.onCreateText });
+    entries.push({ key: "scenery", label: "Scenery from a file…", action: props.onCreateScenery });
   } else {
     const list = items?.[category] ?? [];
     const create = category === "blocks" ? onCreateBlock : category === "items" ? onCreateItem : onCreateModel;

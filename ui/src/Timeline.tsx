@@ -57,6 +57,9 @@ interface Props {
   onCreateModel: (name: string) => void;
   onCreateBlock: (name: string) => void;
   onCreateItem: (name: string) => void;
+  onCreateText: () => void;
+  /** Asks for a file and adds it as scenery. */
+  onCreateScenery: () => void;
   /** Moves timelines under `parent` (the root for null) at `index` among its other children, or at the end. */
   onReparent: (ids: string[], parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -286,6 +289,8 @@ export function Timeline(props: Props) {
                 onCreateModel={props.onCreateModel}
                 onCreateBlock={props.onCreateBlock}
                 onCreateItem={props.onCreateItem}
+                onCreateText={props.onCreateText}
+                onCreateScenery={props.onCreateScenery}
                 onClose={() => setCreating(null)}
               />
             )}

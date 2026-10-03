@@ -311,6 +311,12 @@ export const cancelExport = () => invoke<void>("cancel_export");
 /** Adds an item drawn from a texture of the asset pack. */
 export const createItem = (name: string) => invoke<Edited & { created: string[] }>("create_item", { name });
 
+/** Adds scenery from a schematic, structure or .blocks file. */
+export const createScenery = (path: string) => invoke<Edited & { created: string[] }>("create_scenery", { path });
+
+/** Adds a text object. */
+export const createText = () => invoke<Edited & { created: string[] }>("create_text");
+
 /** Settings of a timeline that are not animated, by their keys in project files. */
 export interface TimelineSettings {
   /** What it takes over from its parent; null for types without a place in the hierarchy. */

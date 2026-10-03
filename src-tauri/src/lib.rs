@@ -127,6 +127,8 @@ pub fn run() {
             editing::create_model,
             editing::create_block,
             editing::create_item,
+            editing::create_scenery,
+            editing::create_text,
             editing::project_settings,
             editing::set_setting,
             editing::set_project_info,

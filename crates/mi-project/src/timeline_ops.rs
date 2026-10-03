@@ -5,8 +5,8 @@
 use crate::history::Edit;
 use crate::Project;
 use mi_assets::{ModelFile, ModelPart};
-use mi_core::{ObjRef, SaveId, TempType, TlType, Value, ValueId, ValueKind};
-use mi_format::project::{Template, Timeline};
+use mi_core::{ObjRef, ResType, SaveId, TempType, TlType, Value, ValueId, ValueKind};
+use mi_format::project::{Resource, Template, Timeline};
 use mi_format::StateValue;
 use std::collections::{HashMap, HashSet};
 
@@ -59,6 +59,11 @@ fn set_children(edit: &mut Edit, parent: Option<&SaveId>, ordered: &[SaveId]) {
             }
         }
     }
+}
+
+/// Whether two paths name the same file.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(a), Ok(b)) if a == b)
 }
 
 fn parent_of(project: &Project, id: &SaveId) -> Option<SaveId> {
@@ -192,6 +197,84 @@ impl Project {
             let id = edit.new_id();
             let mut timeline = Timeline::new(id.clone(), TlType::Item, &edit.project().file.defaults);
             timeline.temp = ObjRef::Id(template_id);
+            timeline.parent = SaveId::root();
+            timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+            let end = edit.project().timelines().len();
+            edit.insert_timeline(end, timeline);
+            id
+        })
+    }
+
+    /// Adds a resource for the file `source` (`new_res`), or finds the one
+    /// that was added from the same file before. The file is read from
+    /// where it is until the project is saved, which copies it next to the
+    /// project; a different file of the same name gets a number, like
+    /// `house (2).schematic`.
+    fn add_resource(edit: &mut Edit, source: &std::path::Path, kind: ResType, setup: impl FnOnce(&mut Resource)) -> SaveId {
+        let name = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let project = edit.project();
+        let existing = project.resources().iter().find(|r| {
+            r.kind == kind && r.filename == name && project.resource_path(r).is_some_and(|path| same_file(&path, source))
+        });
+        if let Some(resource) = existing {
+            return resource.id.clone();
+        }
+        let taken = |candidate: &str| project.resources().iter().any(|r| r.filename == candidate);
+        let (stem, extension) = match name.rsplit_once('.') {
+            Some((stem, extension)) if !stem.is_empty() => (stem.to_owned(), format!(".{extension}")),
+            _ => (name.clone(), String::new()),
+        };
+        let mut filename = name.clone();
+        let mut number = 2;
+        while taken(&filename) {
+            filename = format!("{stem} ({number}){extension}");
+            number += 1;
+        }
+
+        let id = edit.new_id();
+        let mut resource = Resource::new(id.clone(), kind);
+        resource.filename = filename;
+        setup(&mut resource);
+        edit.insert_resource(resource);
+        edit.set_resource_source(&id, source);
+        id
+    }
+
+    /// Adds scenery from a schematic or structure file
+    /// (`action_bench_scenery`, `action_bench_create`). All of its blocks
+    /// are part of the scenery; chests, doors and the like do not get
+    /// timelines of their own yet.
+    pub fn create_scenery(&mut self, source: &std::path::Path) -> SaveId {
+        self.edit("Create timeline", None, |edit| {
+            let resource = Self::add_resource(edit, source, ResType::Scenery, |r| r.scenery_tl_add = Some(false));
+            let mut template = Template::new(edit.new_id(), TempType::Scenery);
+            template.scenery = ObjRef::Id(resource);
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let id = edit.new_id();
+            let mut timeline = Timeline::new(id.clone(), TlType::Scenery, &edit.project().file.defaults);
+            timeline.temp = ObjRef::Id(template_id);
+            timeline.appearance.texture_filtering = true;
+            timeline.parent = SaveId::root();
+            timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+            let end = edit.project().timelines().len();
+            edit.insert_timeline(end, timeline);
+            id
+        })
+    }
+
+    /// Adds a text object showing `text` in the Minecraft font.
+    pub fn create_text(&mut self, text: &str) -> SaveId {
+        self.edit("Create timeline", None, |edit| {
+            let template = Template::new(edit.new_id(), TempType::Text);
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let id = edit.new_id();
+            let mut timeline = Timeline::new(id.clone(), TlType::Text, &edit.project().file.defaults);
+            timeline.temp = ObjRef::Id(template_id);
+            timeline.text = text.to_owned();
             timeline.parent = SaveId::root();
             timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
             let end = edit.project().timelines().len();

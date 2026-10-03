@@ -26,7 +26,11 @@ fn render_check() {
     let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/Data");
     let pack = mi_assets::AssetPack::open(&data.join("Minecraft"), mi_core::version::MINECRAFT_VERSION).unwrap();
     let legacy = mi_assets::LegacyBlocks::load(&std::fs::read(data.join("legacy.midata")).unwrap(), pack.blocks());
-    let (project, _) = mi_project::Project::open(std::path::Path::new(&path), Default::default()).unwrap();
+    let (mut project, _) = mi_project::Project::open(std::path::Path::new(&path), Default::default()).unwrap();
+    // `MI_RENDER_ADD_SCENERY=<file>` adds a schematic the way the workbench does.
+    if let Ok(file) = std::env::var("MI_RENDER_ADD_SCENERY") {
+        project.create_scenery(std::path::Path::new(&file));
+    }
     let bindings = mi_project::ModelBindings::bind(&project, &pack);
     let scenery = mi_project::SceneryStore::load(&project, &pack, &legacy);
 

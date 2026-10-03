@@ -42,7 +42,18 @@ pub struct SceneryStore {
 impl SceneryStore {
     pub fn load(project: &Project, pack: &AssetPack, legacy: &LegacyBlocks) -> Self {
         let mut store = Self::default();
+        store.load_missing(project, pack, legacy);
+        store
+    }
+
+    /// Reads the scenery of resources that are not in the store yet, such
+    /// as one that was just added to the project.
+    pub fn load_missing(&mut self, project: &Project, pack: &AssetPack, legacy: &LegacyBlocks) {
+        let store = self;
         for resource in project.resources() {
+            if store.scenery.contains_key(&resource.id) {
+                continue;
+            }
             match resource.kind {
                 ResType::Scenery => {}
                 ResType::FromWorld => {
@@ -51,8 +62,7 @@ impl SceneryStore {
                 }
                 _ => continue,
             }
-            let Some(folder) = project.folder() else { continue };
-            let path = folder.join(&resource.filename);
+            let Some(path) = project.resource_path(resource) else { continue };
             let bytes = match std::fs::read(&path) {
                 Ok(bytes) => bytes,
                 Err(error) => {
@@ -81,7 +91,6 @@ impl SceneryStore {
                 Err(error) => store.errors.push((resource.id.clone(), format!("{}: {error}", path.display()))),
             }
         }
-        store
     }
 
     /// Adds or replaces the scenery of a resource.

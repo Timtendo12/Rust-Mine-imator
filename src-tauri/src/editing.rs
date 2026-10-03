@@ -475,6 +475,43 @@ pub fn create_item(name: String, state: State<'_, AppState>) -> Result<Created, 
     Ok(Created { edited, created: vec![id.to_string()] })
 }
 
+/// Adds scenery from a schematic (`.schematic`), structure (`.nbt`) or
+/// `.blocks` file. The file is read first, so that one that is no scenery
+/// adds nothing.
+#[tauri::command(async)]
+pub fn create_scenery(path: String, state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let pack = state.pack().ok_or_else(|| CommandError::Invalid("the Minecraft assets are not loaded".into()))?;
+    let file = Path::new(&path);
+    let bytes = std::fs::read(file).map_err(|e| CommandError::Invalid(format!("{path}: {e}")))?;
+    let extension = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let empty = mi_assets::LegacyBlocks::empty();
+    let legacy = state.legacy().unwrap_or(&empty);
+    mi_assets::Scenery::read(&bytes, extension, pack.blocks(), legacy, Default::default())
+        .map_err(|e| CommandError::Invalid(format!("{path}: {e}")))?;
+
+    let id = {
+        let mut guard = state.project();
+        let project = guard.as_mut().ok_or(CommandError::NoProject)?;
+        project.create_scenery(file)
+    };
+    // The viewport needs the blocks before it draws the new timeline.
+    state.load_new_scenery();
+    let (_, edited) = change(&state, |_| ())?;
+    state.refresh_project_assets();
+    Ok(Created { edited, created: vec![id.to_string()] })
+}
+
+/// Adds a text object with the sample text.
+#[tauri::command]
+pub fn create_text(state: State<'_, AppState>) -> Result<Created, CommandError> {
+    let mut text = state.language().text("timelineeditortextsample", &[]);
+    if text.starts_with('<') {
+        text = "Sample text".to_owned();
+    }
+    let (id, edited) = change(&state, |p| p.create_text(&text))?;
+    Ok(Created { edited, created: vec![id.to_string()] })
+}
+
 /// Settings of a timeline that are not animated, as project files store
 /// them. Groups a timeline's type has no use for are absent.
 #[derive(Debug, Serialize)]

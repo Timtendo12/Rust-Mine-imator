@@ -41,6 +41,10 @@ pub struct Project {
     template_index: HashMap<SaveId, usize>,
     resource_index: HashMap<SaveId, usize>,
     ids: IdGenerator,
+    /// Files of resources that were added since the project was saved:
+    /// they are read from where they were picked and copied next to the
+    /// project when it is saved (`load_folder` in the original).
+    pub(crate) resource_sources: HashMap<SaveId, PathBuf>,
     pub(crate) changed: bool,
     pub(crate) history: crate::history::History,
 }
@@ -93,6 +97,7 @@ impl Project {
             template_index: HashMap::new(),
             resource_index: HashMap::new(),
             ids,
+            resource_sources: HashMap::new(),
             changed: false,
             history: Default::default(),
         };
@@ -146,14 +151,46 @@ impl Project {
         self.save_as(&path)
     }
 
-    /// Writes the project to `path` and makes that its file.
+    /// Writes the project to `path` and makes that its file. The files of
+    /// its resources are copied next to it (`res_save`), from where they
+    /// were added or from the folder the project was in.
     pub fn save_as(&mut self, path: &Path) -> Result<(), ProjectError> {
         self.sync_tree_indices();
         let text = self.file.save();
         std::fs::write(path, text).map_err(|source| ProjectError::Write { path: path.to_owned(), source })?;
+
+        if let Some(folder) = path.parent() {
+            for resource in &self.file.objects.resources {
+                // Scenery from worlds has no file of its own.
+                if resource.kind == mi_core::ResType::FromWorld || resource.filename.is_empty() {
+                    continue;
+                }
+                let Some(from) = self.resource_path(resource) else { continue };
+                let to = folder.join(&resource.filename);
+                let same = from == to || matches!((from.canonicalize(), to.canonicalize()), (Ok(a), Ok(b)) if a == b);
+                if same || !from.is_file() {
+                    continue;
+                }
+                if let Some(parent) = to.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::copy(&from, &to).map_err(|source| ProjectError::Write { path: to.clone(), source })?;
+            }
+        }
+        // From now on the copies next to the project are the resources.
+        self.resource_sources.clear();
         self.path = Some(path.to_owned());
         self.changed = false;
         Ok(())
+    }
+
+    /// Where the file of a resource is: where it was added from, or else
+    /// next to the project. `None` for an unsaved project's own resources.
+    pub fn resource_path(&self, resource: &Resource) -> Option<PathBuf> {
+        match self.resource_sources.get(&resource.id) {
+            Some(source) => Some(source.clone()),
+            None => Some(self.folder()?.join(&resource.filename)),
+        }
     }
 
     /// Updates `parent_tree_index` of every timeline from the tree.

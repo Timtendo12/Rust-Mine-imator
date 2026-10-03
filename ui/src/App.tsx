@@ -7,6 +7,8 @@ import {
   copyKeyframes,
   createBlock,
   createItem,
+  createScenery,
+  createText,
   createKeyframes,
   createModel,
   createTimeline,
@@ -286,6 +288,15 @@ export function App() {
     [run, setSelected],
   );
 
+  /** Asks for a schematic or structure file and adds it as scenery. */
+  const addScenery = useCallback(async () => {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Scenery (schematics, structures)", extensions: ["schematic", "schem", "nbt", "blocks"] }],
+    });
+    if (typeof path === "string") await create(() => createScenery(path));
+  }, [create]);
+
   const duplicate = useCallback(async () => {
     if (selection.length === 0) return;
     const ids = selection;
@@ -556,6 +567,8 @@ export function App() {
             onCreateModel={(name) => void create(() => createModel(name))}
             onCreateBlock={(name) => void create(() => createBlock(name))}
             onCreateItem={(name) => void create(() => createItem(name))}
+            onCreateText={() => void create(createText)}
+            onCreateScenery={() => void addScenery()}
             onReparent={(ids, parent, index) => void run(() => reparentTimelines(ids, parent, index))}
             onPlay={setPlaying}
           />

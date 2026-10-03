@@ -147,6 +147,25 @@ impl AppState {
         *lock(&self.bindings) = bindings;
     }
 
+    /// Reads the scenery of resources that were added to the open project.
+    pub fn load_new_scenery(&self) {
+        let empty = LegacyBlocks::empty();
+        let guard = lock(&self.project);
+        let (Some(project), Some(pack)) = (guard.as_ref(), self.pack()) else { return };
+        let mut scenery = lock(&self.scenery);
+        let store = scenery.get_or_insert_with(SceneryStore::default);
+        store.errors.clear();
+        store.load_missing(project, pack, self.legacy.get().unwrap_or(&empty));
+        for (id, error) in &store.errors {
+            eprintln!("Could not load scenery {id}: {error}");
+        }
+    }
+
+    /// The numeric block ids of old schematics.
+    pub fn legacy(&self) -> Option<&LegacyBlocks> {
+        self.legacy.get()
+    }
+
     /// Evaluates the scene of `project` (the open one, which the caller has
     /// locked) with its bound models and loaded scenery, as the viewport
     /// does: bends and the rotation points of scenery depend on them.

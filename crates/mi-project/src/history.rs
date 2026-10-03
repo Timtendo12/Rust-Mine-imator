@@ -9,7 +9,7 @@
 
 use crate::Project;
 use mi_core::SaveId;
-use mi_format::project::{Background, ProjectInfo, RenderSettings, Template, Timeline};
+use mi_format::project::{Background, ProjectInfo, RenderSettings, Resource, Template, Timeline};
 
 /// Steps kept for undo (`history_max` in the original is 100).
 pub const HISTORY_LIMIT: usize = 100;
@@ -20,6 +20,7 @@ pub const HISTORY_LIMIT: usize = 100;
 enum Snapshot {
     Timeline { id: SaveId, index: usize, timeline: Option<Box<Timeline>> },
     Template { id: SaveId, index: usize, template: Option<Box<Template>> },
+    Resource { id: SaveId, index: usize, resource: Option<Box<Resource>> },
     Info(Box<ProjectInfo>),
     Background(Box<Background>),
     Render(Box<RenderSettings>),
@@ -30,6 +31,7 @@ impl Snapshot {
         match (self, other) {
             (Snapshot::Timeline { id: a, .. }, Snapshot::Timeline { id: b, .. }) => a == b,
             (Snapshot::Template { id: a, .. }, Snapshot::Template { id: b, .. }) => a == b,
+            (Snapshot::Resource { id: a, .. }, Snapshot::Resource { id: b, .. }) => a == b,
             (Snapshot::Info(_), Snapshot::Info(_))
             | (Snapshot::Background(_), Snapshot::Background(_))
             | (Snapshot::Render(_), Snapshot::Render(_)) => true,
@@ -145,6 +147,21 @@ impl Edit<'_> {
         self.project.rebuild_indices();
     }
 
+    /// Adds a resource to the project.
+    pub fn insert_resource(&mut self, resource: Resource) {
+        let id = resource.id.clone();
+        let index = self.project.file.objects.resources.len();
+        let probe = Snapshot::Resource { id: id.clone(), index, resource: None };
+        self.record(|_| Snapshot::Resource { id: id.clone(), index, resource: None }, &probe);
+        self.project.file.objects.resources.push(resource);
+        self.project.rebuild_indices();
+    }
+
+    /// Records where the file of a resource is until the project is saved.
+    pub fn set_resource_source(&mut self, id: &SaveId, source: &std::path::Path) {
+        self.project.resource_sources.insert(id.clone(), source.to_owned());
+    }
+
     /// A new save id that no object of the project has.
     pub fn new_id(&mut self) -> SaveId {
         self.project.new_id()
@@ -254,6 +271,14 @@ impl Project {
                     template: found.map(|i| Box::new(self.file.objects.templates[i].clone())),
                 }
             }
+            Snapshot::Resource { id, index, .. } => {
+                let found = self.file.objects.resources.iter().position(|r| &r.id == id);
+                Snapshot::Resource {
+                    id: id.clone(),
+                    index: found.unwrap_or(*index),
+                    resource: found.map(|i| Box::new(self.file.objects.resources[i].clone())),
+                }
+            }
             Snapshot::Info(_) => Snapshot::Info(Box::new(self.file.info.clone())),
             Snapshot::Background(_) => Snapshot::Background(Box::new(self.file.background.clone())),
             Snapshot::Render(_) => Snapshot::Render(Box::new(self.file.render.clone())),
@@ -286,6 +311,19 @@ impl Project {
                             templates.remove(i);
                         }
                         (None, Some(t)) => templates.insert((*index).min(templates.len()), (**t).clone()),
+                        (None, None) => {}
+                    }
+                    self.rebuild_indices();
+                }
+                Snapshot::Resource { id, index, resource } => {
+                    let resources = &mut self.file.objects.resources;
+                    let current = resources.iter().position(|r| &r.id == id);
+                    match (current, resource) {
+                        (Some(i), Some(r)) => resources[i] = (**r).clone(),
+                        (Some(i), None) => {
+                            resources.remove(i);
+                        }
+                        (None, Some(r)) => resources.insert((*index).min(resources.len()), (**r).clone()),
                         (None, None) => {}
                     }
                     self.rebuild_indices();
