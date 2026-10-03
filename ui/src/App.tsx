@@ -18,6 +18,7 @@ import {
   editMarker,
   createKeyframes,
   createModel,
+  createParticles,
   createTimeline,
   duplicateTimelines,
   evaluateFrame,
@@ -323,6 +324,19 @@ export function App() {
       }
     },
     [run, setSelected],
+  );
+
+  /** Adds a particle spawner from a preset, or (null) from a file that is asked for. */
+  const addParticles = useCallback(
+    async (preset: string | null) => {
+      if (preset !== null) {
+        await create(() => createParticles(preset));
+        return;
+      }
+      const path = await open({ multiple: false, filters: [{ name: "Particles", extensions: ["miparticles"] }] });
+      if (typeof path === "string") await create(() => createParticles(null, path));
+    },
+    [create],
   );
 
   /** Asks for a sound file and adds it at the playhead. */
@@ -647,6 +661,7 @@ export function App() {
             onCreateText={() => void create(createText)}
             onCreateScenery={() => void addScenery()}
             onCreateAudio={() => void addAudio()}
+            onCreateParticles={(preset) => void addParticles(preset)}
             onReparent={(ids, parent, index) => void run(() => reparentTimelines(ids, parent, index))}
             onPlay={setPlaying}
           />

@@ -89,6 +89,7 @@ fn render_check() {
         selected: &selected,
         font: Some(&font),
         backdrop: true,
+        particles: None,
     };
     let mut cache = Default::default();
     let frame = env("MI_RENDER_FRAME").unwrap_or(0.0);

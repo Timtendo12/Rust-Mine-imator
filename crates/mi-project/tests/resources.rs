@@ -134,3 +134,34 @@ fn skins_are_set_on_the_model_of_a_timeline_or_its_parts() {
     assert!(project.resources().is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn particle_presets_become_spawner_timelines() {
+    let presets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/Particles");
+    let mut project = Project::new(ProjectContext::default());
+    let mut made = 0;
+    for entry in std::fs::read_dir(&presets).unwrap() {
+        let path = entry.unwrap().path();
+        let bytes = std::fs::read(&path).unwrap();
+        let id = project.create_particles(&bytes, "Preset").unwrap();
+        made += 1;
+        let timeline = project.timeline(&id).unwrap();
+        assert_eq!(timeline.kind, TlType::ParticleSpawner);
+        let template = project.template(timeline.temp.as_id().unwrap()).unwrap();
+        assert_eq!((template.kind, template.name.as_str()), (TempType::ParticleSpawner, "Preset"));
+        let spawner = template.particles.as_ref().unwrap();
+        // Types that are objects of the preset's own library are left out.
+        assert!(spawner.types.iter().all(|t| !matches!(t.source, mi_format::project::ParticleSource::Object(_))), "{path:?}");
+    }
+    assert!(made >= 10);
+    // Every particle type has an id of its own.
+    let mut ids: Vec<_> =
+        project.templates().iter().flat_map(|t| t.particles.iter()).flat_map(|p| p.types.iter().map(|k| k.id.clone())).collect();
+    let total = ids.len();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), total);
+    assert!(project.create_particles(b"not a file", "x").is_err());
+    assert!(project.undo());
+    assert_eq!(project.timelines().len(), made - 1);
+}

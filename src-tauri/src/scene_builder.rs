@@ -35,6 +35,8 @@ pub struct SceneInputs<'a> {
     pub font: Option<&'a mi_assets::SpriteFont>,
     /// Draw the sky and the clouds (`render_background`).
     pub backdrop: bool,
+    /// The particle simulations, stepped to the frame that is drawn.
+    pub particles: Option<&'a std::sync::Mutex<crate::particles::ParticleStore>>,
 }
 
 /// How a viewport shows the scene (`e_view_mode`, without the high quality
@@ -238,6 +240,18 @@ fn push_clouds(objects: &mut Vec<RenderObject>, resources: &mut dyn SceneResourc
         object.backfaces = true;
         objects.push(object);
     }
+}
+
+/// The square a particle sprite is drawn on (`ptype_update_sprite_vbuffers`):
+/// upright, `size` wide, with the whole texture on it.
+fn particle_quad(size: f32) -> MeshData {
+    let h = size / 2.0;
+    let up = [0.0, 0.0, 1.0];
+    let mut mesh = MeshData::default();
+    for (x, z, u, v) in [(-h, h, 0.0, 0.0), (h, h, 1.0, 0.0), (h, -h, 1.0, 1.0), (-h, h, 0.0, 0.0), (h, -h, 1.0, 1.0), (-h, -h, 0.0, 1.0)] {
+        mesh.vertex([x, 0.0, z], up, [u, v]);
+    }
+    mesh
 }
 
 /// The colour a block texture is tinted with (`block_texture_get_blend`).
@@ -572,6 +586,50 @@ pub fn build_scene(
                 object.fog = timeline.appearance.fog;
                 object.backfaces = timeline.appearance.backfaces;
                 objects.push(object);
+            }
+            TlType::ParticleSpawner => {
+                let (Some(pack), Some(store)) = (inputs.pack, inputs.particles) else { continue };
+                let Some(template) = timeline.temp.as_id().and_then(|id| project.template(id)) else { continue };
+                let Some(spawner) = template.particles.as_deref() else { continue };
+                let attractor = crate::particles::attractor_of(node)
+                    .and_then(|id| project.timeline_index(id))
+                    .and_then(|index| order.iter().position(|&i| i == index))
+                    .map(|n| state.nodes[n].world_pos);
+                let frames = |name: &str| pack.particle_template(name).map_or(1, |t| t.frames);
+                let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+                let moment = crate::particles::Moment { marker, seconds, attractor };
+                let particles = store.advance(timeline, node, spawner, moment, &frames);
+
+                let eye = [camera.from.x as f64, camera.from.y as f64, camera.from.z as f64];
+                for particle in particles {
+                    let kind = &spawner.types[particle.kind];
+                    // Sprites of the built-in templates. (Sprite sheets of
+                    // resources and particles that are objects: not yet.)
+                    if !matches!(kind.source, mi_format::project::ParticleSource::Template) {
+                        continue;
+                    }
+                    let Some(sprite) = pack.particle_template(&kind.settings.sprite_template) else { continue };
+                    let size = sprite.size as f32;
+                    let mesh = resources.mesh(format!("particle:{size}"), &|| particle_quad(size));
+                    let texture_name = sprite.frame_texture(particle.frame.max(0));
+                    let texture = pack_texture(resources, Some(pack), &texture_name);
+                    if texture.is_none() {
+                        continue;
+                    }
+                    // Turned to face the camera (`render_world_particle`).
+                    let p = particle.pos;
+                    let around = 90.0 + (-(eye[1] - p[1])).atan2(eye[0] - p[0]).to_degrees();
+                    let flat = ((eye[0] - p[0]).powi(2) + (eye[1] - p[1]).powi(2)).max(0.001).sqrt();
+                    let up = -((eye[2] - p[2]) / flat).atan().to_degrees();
+                    let matrix = mi_anim::Mat4::build(p, [up, particle.sprite_angle, around], [particle.scale; 3]);
+                    let mut object = RenderObject::new(mesh, matrix.to_f32());
+                    object.texture = texture;
+                    apply_material(&mut object, inherited, particle.color, particle.alpha);
+                    object.unlit = unlit;
+                    object.fog = timeline.appearance.fog;
+                    object.backfaces = true;
+                    objects.push(object);
+                }
             }
             TlType::Text => {
                 let Some(font) = inputs.font else { continue };
@@ -1015,7 +1073,7 @@ mod tests {
         let bindings = ModelBindings::bind(&project, &pack);
         assert_eq!(bindings.len(), 3);
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[], font: None, backdrop: false };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: Some(&bindings), scenery: None, selected: &[], font: None, backdrop: false, particles: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         // Ground plus the shapes of three parts, all textured.
         assert!(scene.objects.len() > 4, "{}", scene.objects.len());
@@ -1045,7 +1103,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[], font: None, backdrop: false };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: None, selected: &[], font: None, backdrop: false, particles: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys.len(), 1);
         assert!(recorder.keys[0].starts_with("block:grass_block:snowy=false:[2, 3, 1]"), "{}", recorder.keys[0]);
@@ -1093,7 +1151,7 @@ mod tests {
         file.objects.timelines.push(tl);
         let project = Project::from_file(file, IdGenerator::new(3)).0;
 
-        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[], font: None, backdrop: false };
+        let inputs = SceneInputs { pack: Some(&pack), bindings: None, scenery: Some(&store), selected: &[], font: None, backdrop: false, particles: None };
         let (scene, recorder) = build_with(&project, inputs, ViewCamera::Work(WorkCamera::default()), ViewMode::Shaded);
         assert_eq!(recorder.keys, ["scenery:RES:true:false:true"]);
         // One texture, two copies along Y.

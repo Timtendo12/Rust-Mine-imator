@@ -176,6 +176,36 @@ impl ModelDef {
     }
 }
 
+/// A built-in particle sprite (`obj_particle_template`): one image, or an
+/// animation of several.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticleTemplate {
+    pub name: String,
+    /// Texture name without the frame suffix, such as `particle/generic`.
+    pub texture: String,
+    pub frames: i64,
+    pub animated: bool,
+    /// Width and height of the sprite in the world.
+    pub size: f64,
+    /// Frames are named `_a`, `_b`, ... instead of `_0`, `_1`, ...
+    pub letter_suffix: bool,
+}
+
+impl ParticleTemplate {
+    /// The texture of a frame; frames wrap around.
+    pub fn frame_texture(&self, frame: i64) -> String {
+        if !self.animated {
+            return self.texture.clone();
+        }
+        let index = frame.rem_euclid(self.frames.max(1));
+        if self.letter_suffix {
+            format!("{}_{}", self.texture, (b'a' + (index % 26) as u8) as char)
+        } else {
+            format!("{}_{index}", self.texture)
+        }
+    }
+}
+
 /// The loaded asset pack. Files stay compressed in memory and are read on
 /// demand; parsed model files are cached.
 pub struct AssetPack {
@@ -232,6 +262,25 @@ impl AssetPack {
         let zip = std::fs::read(folder.join(format!("{version}.zip")))?;
         let manifest = std::fs::read(folder.join(format!("{version}.midata")))?;
         Self::load(zip, &manifest)
+    }
+
+    /// A particle template of the manifest's `particles` list, by name.
+    pub fn particle_template(&self, name: &str) -> Option<ParticleTemplate> {
+        let entry = self
+            .manifest
+            .array("particles")?
+            .iter()
+            .filter_map(Json::as_object)
+            .find(|entry| entry.string("name") == Some(name))?;
+        let frames = entry.real("frames");
+        Some(ParticleTemplate {
+            name: name.to_owned(),
+            texture: entry.string("texture")?.to_owned(),
+            frames: frames.unwrap_or(1.0) as i64,
+            animated: frames.is_some(),
+            size: entry.real("size").unwrap_or(8.0),
+            letter_suffix: entry.flag("letter_suffix").unwrap_or(false),
+        })
     }
 
     /// The parsed manifest, for lists not modelled here yet.

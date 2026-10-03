@@ -27,6 +27,8 @@ pub struct AppState {
     selection: Mutex<Vec<mi_core::SaveId>>,
     /// Copied keyframes; kept when another project is opened, as in the original.
     clipboard: Mutex<mi_project::KeyframeClipboard>,
+    /// The particles of the open project's spawners.
+    particles: Mutex<crate::particles::ParticleStore>,
     /// Decoded sounds of the open project.
     sounds: Mutex<crate::audio::Sounds>,
     /// Plays the sounds along with the animation.
@@ -140,6 +142,7 @@ impl AppState {
         *lock(&self.bindings) = bindings;
         *lock(&self.scenery) = scenery;
         *lock(&self.sounds) = Default::default();
+        *lock(&self.particles) = Default::default();
         self.load_new_sounds();
     }
 
@@ -153,6 +156,10 @@ impl AppState {
             eprintln!("Could not load sound {error}");
         }
         errors
+    }
+
+    pub fn particles(&self) -> &Mutex<crate::particles::ParticleStore> {
+        &self.particles
     }
 
     pub fn sounds(&self) -> MutexGuard<'_, crate::audio::Sounds> {

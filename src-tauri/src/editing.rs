@@ -60,6 +60,10 @@ fn change<R>(state: &AppState, apply: impl FnOnce(&mut Project) -> R) -> Result<
     // Models and scenery are bound by timeline position.
     if reshaped {
         state.refresh_project_assets();
+        if let Some(project) = state.project().as_ref() {
+            let mut particles = state.particles().lock().unwrap_or_else(|e| e.into_inner());
+            particles.retain(|id| project.timeline(id).is_some());
+        }
     }
     state.redraw();
     Ok((result, edited))
@@ -587,6 +591,55 @@ pub fn create_audio(path: String, timelines: Vec<String>, state: State<'_, AppSt
     state.load_new_sounds();
     let (_, edited) = change(&state, |_| ())?;
     state.refresh_project_assets();
+    Ok(Created { edited, created: vec![id.to_string()] })
+}
+
+/// The folder of the particle presets that ship with the program.
+fn presets_folder(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path().resolve("assets/Particles", tauri::path::BaseDirectory::Resource).ok()
+}
+
+/// Names of the particle presets (`.miparticles` files), sorted.
+#[tauri::command]
+pub fn particle_presets(app: tauri::AppHandle) -> Vec<String> {
+    let Some(folder) = presets_folder(&app) else { return Vec::new() };
+    let mut names: Vec<String> = std::fs::read_dir(folder)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.extension().is_some_and(|e| e.eq_ignore_ascii_case("miparticles")))
+        .filter_map(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    names
+}
+
+/// Adds a particle spawner from a preset, or from a `.miparticles` file
+/// when `path` is given.
+#[tauri::command]
+pub fn create_particles(
+    preset: Option<String>,
+    path: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Created, CommandError> {
+    let file = match (&preset, &path) {
+        (_, Some(path)) => std::path::PathBuf::from(path),
+        (Some(preset), None) => {
+            // Only the names the list gave out.
+            if !particle_presets(app.clone()).contains(preset) {
+                return Err(CommandError::Invalid(format!("unknown particle preset {preset}")));
+            }
+            let folder = presets_folder(&app).ok_or_else(|| CommandError::Invalid("the presets are missing".into()))?;
+            folder.join(format!("{preset}.miparticles"))
+        }
+        (None, None) => return Err(CommandError::Invalid("no particles were chosen".into())),
+    };
+    let bytes = std::fs::read(&file).map_err(|e| CommandError::Invalid(format!("{}: {e}", file.display())))?;
+    let name = file.file_stem().map(|s| s.to_string_lossy().replace('_', " ")).unwrap_or_default();
+    let (id, edited) = change(&state, |p| p.create_particles(&bytes, &name))?;
+    let id = id.map_err(|e| CommandError::Invalid(format!("{}: {e}", file.display())))?;
     Ok(Created { edited, created: vec![id.to_string()] })
 }
 

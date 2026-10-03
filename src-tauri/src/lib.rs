@@ -7,6 +7,7 @@ mod editing;
 mod frame_editor;
 mod export;
 mod gizmo;
+mod particles;
 mod recent;
 #[cfg(test)]
 mod render_check;
@@ -140,6 +141,8 @@ pub fn run() {
             editing::create_item,
             editing::create_scenery,
             editing::create_text,
+            editing::particle_presets,
+            editing::create_particles,
             editing::create_audio,
             editing::set_model_skin,
             editing::project_settings,

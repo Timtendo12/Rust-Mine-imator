@@ -320,6 +320,44 @@ impl Project {
         })
     }
 
+    /// Adds a particle spawner with the settings of a `.miparticles` file
+    /// (`action_bench_create` for particles). Particle types that are
+    /// objects of the file's own library are left out: importing those
+    /// objects is not supported yet.
+    pub fn create_particles(&mut self, particles_file: &[u8], name: &str) -> Result<SaveId, mi_format::FormatError> {
+        let defaults = self.file.defaults.clone();
+        let background = self.file.background.clone();
+        let mut ids = Vec::new();
+        let loaded = mi_format::project::ParticlesFile::load(particles_file, &defaults, &background, &mut || {
+            let id = self.new_id();
+            ids.push(id.clone());
+            id
+        })?;
+        let mut spawner = loaded.file.particles;
+        spawner.types.retain(|kind| !matches!(kind.source, mi_format::project::ParticleSource::Object(_)));
+
+        Ok(self.edit("Create timeline", None, |edit| {
+            // The ids in the file may be taken in this project.
+            for kind in &mut spawner.types {
+                kind.id = edit.new_id();
+            }
+            let mut template = Template::new(edit.new_id(), TempType::ParticleSpawner);
+            template.name = name.to_owned();
+            template.particles = Some(Box::new(spawner));
+            let template_id = template.id.clone();
+            edit.insert_template(template);
+
+            let id = edit.new_id();
+            let mut timeline = Timeline::new(id.clone(), TlType::ParticleSpawner, &edit.project().file.defaults);
+            timeline.temp = ObjRef::Id(template_id);
+            timeline.parent = SaveId::root();
+            timeline.parent_tree_index = Some(children_of(edit.project(), None).len() as i64);
+            let end = edit.project().timelines().len();
+            edit.insert_timeline(end, timeline);
+            id
+        }))
+    }
+
     /// Adds a text object showing `text` in the Minecraft font.
     pub fn create_text(&mut self, text: &str) -> SaveId {
         self.edit("Create timeline", None, |edit| {

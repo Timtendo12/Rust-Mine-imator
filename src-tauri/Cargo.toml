@@ -19,6 +19,7 @@ mi-audio = { workspace = true }
 mi-core = { workspace = true }
 mi-format = { workspace = true }
 mi-mesh = { workspace = true }
+mi-particles = { workspace = true }
 glam = "0.30"
 image = { version = "0.25", default-features = false, features = ["png"] }
 mi-project = { workspace = true }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { workbenchItems, type CreatableKind, type WorkbenchItems } from "./backend";
+import { particlePresets, workbenchItems, type CreatableKind, type WorkbenchItems } from "./backend";
 
 /** Timelines that need no settings, in the workbench's order. */
 const BASIC: [CreatableKind, string][] = [
@@ -14,7 +14,7 @@ const BASIC: [CreatableKind, string][] = [
   ["surface", "Surface"],
 ];
 
-type Category = "basic" | "characters" | "specialBlocks" | "blocks" | "items" | "files";
+type Category = "basic" | "characters" | "specialBlocks" | "blocks" | "items" | "particles" | "files";
 
 const CATEGORIES: [Category, string][] = [
   ["basic", "Basic"],
@@ -22,6 +22,7 @@ const CATEGORIES: [Category, string][] = [
   ["specialBlocks", "Special block"],
   ["blocks", "Block"],
   ["items", "Item"],
+  ["particles", "Particles"],
   ["files", "From a file"],
 ];
 
@@ -41,6 +42,7 @@ interface Props {
   onCreateText: () => void;
   onCreateScenery: () => void;
   onCreateAudio: () => void;
+  onCreateParticles: (preset: string | null) => void;
   onClose: () => void;
 }
 
@@ -50,11 +52,13 @@ export function Workbench(props: Props) {
   const [category, setCategory] = useState<Category>("basic");
   const [items, setItems] = useState<WorkbenchItems | null>(null);
   const [search, setSearch] = useState("");
+  const [presets, setPresets] = useState<string[]>([]);
   const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     cachedItems ??= workbenchItems();
     cachedItems.then(setItems, () => (cachedItems = null));
+    particlePresets().then(setPresets, () => undefined);
   }, []);
 
   // Close on a click elsewhere or Escape.
@@ -84,10 +88,13 @@ export function Workbench(props: Props) {
   if (category === "basic") {
     entries = BASIC.map(([kind, label]) => ({ key: kind, label, action: () => onCreate(kind) }));
     entries.push({ key: "text", label: "Text", action: props.onCreateText });
+  } else if (category === "particles") {
+    entries = presets.map((name) => ({ key: name, label: name.replace(/_/g, " "), action: () => props.onCreateParticles(name) }));
   } else if (category === "files") {
     entries = [
       { key: "scenery", label: "Scenery (schematic, structure)…", action: props.onCreateScenery },
       { key: "audio", label: "Sound…", action: props.onCreateAudio },
+      { key: "particles", label: "Particles (.miparticles)…", action: () => props.onCreateParticles(null) },
     ];
   } else {
     const list = items?.[category] ?? [];
@@ -123,11 +130,11 @@ export function Workbench(props: Props) {
         ))}
       </div>
       <div className="workbench-items">
-        {category !== "basic" && category !== "files" && (
+        {category !== "basic" && category !== "files" && category !== "particles" && (
           <input autoFocus type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
         <div className="workbench-list">
-          {category !== "basic" && category !== "files" && !items && <p className="muted">Loading…</p>}
+          {category !== "basic" && category !== "files" && category !== "particles" && !items && <p className="muted">Loading…</p>}
           {shown.map((entry) => (
             <button key={entry.key} onClick={() => pick(entry.action)}>
               {entry.label}

@@ -22,7 +22,7 @@ pub use blocks::{block_mesh, pick_weighted, BlockDef, BlockWave, WaveAxis, Block
 pub use item::{item_mesh, ITEM_SIZE};
 pub use legacy::{LegacyBlock, LegacyBlocks};
 pub use model_file::{Bend, ModelError, ModelFile, ModelPart, ModelShape, ShapeKind};
-pub use pack::{decode_square, AssetPack, ModelDef, PackError, ResolvedModel, Rgba};
+pub use pack::{decode_square, AssetPack, ModelDef, PackError, ParticleTemplate, ResolvedModel, Rgba};
 pub use scenery::{Scenery, SceneryBlock, SceneryError, SceneryOptions};
 pub use text::{text_image, text_mesh, Align, SpriteFont, TextImage};
 pub use shape_mesh::{shape_mesh, BendStyle};

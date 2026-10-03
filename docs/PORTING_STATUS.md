@@ -79,7 +79,7 @@ Legend: **done** · **partial** · **not started**
 | Inherit pose | partial: implemented, not covered by a test yet |
 | Camera orbit | done |
 | Camera shake | done: the simplex noise of the original (`simplex_lib`), turning or moving the active camera |
-| Playback | done: driven by the frontend clock at the project tempo; repeat and seamless repeat loop the region or the whole animation. Without a repeat mode playback stops at the last keyframe instead of running on |
+| Playback | done: driven by the frontend clock at the project tempo; repeat and seamless repeat loop the region or the whole animation. Without a repeat mode playback stops at the last keyframe instead of running on (a project without keyframes plays on, for particles) |
 
 ## Assets
 
@@ -112,7 +112,7 @@ Legend: **done** · **partial** · **not started**
 | Scenery | done (with repeat) |
 | Text | partial: text timelines in the Minecraft font (the original's sprite font, shipped as `Data/Fonts/minecraft.png`) with alignment and line breaks. Not yet: other fonts, 3D text, outlines, facing the camera |
 | Items | partial: item timelines from pack textures, flat or extruded pixel by pixel (`render_generate_item`, `vbuffer_add_pixels`), and a keyframe's custom item. Not yet: item sheets of resources, facing the camera, spinning and bouncing |
-| Paths, particles | not started |
+| Paths, particles | partial: particles of the built-in sprite templates, facing the camera, stepped with the animation; presets from the workbench. Not yet: sprite sheets of resources, particles that are objects, drawing paths |
 | Animated background (background timelines overriding the sky settings) | not started |
 | Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. The selected timeline has the move arrows of `view_control_move` the rotation rings of `view_control_rotate` and the scale handles of `view_control_scale`, switched with the Move/Rotate/Scale tool; a drag is one undo step. Not yet: move and scale planes, scaling all axes at once, the bend control, snapping, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
@@ -129,7 +129,7 @@ Legend: **done** · **partial** · **not started**
 
 | Feature | Status |
 |---|---|
-| Particle simulation (deterministic, seeded) | not started |
+| Particle simulation (deterministic, seeded) | partial: steady spawning spread over a minute and bursts fired by keyframes, motion (launch direction, speed, acceleration, damping), rotation, sprite turn, scale, alpha, colour mixing, sprite animation, lifetimes and the amount limit, spawn regions (sphere, cube, box), bounding boxes (ground, spawn region, custom) with bouncing, freezing, clearing, point attractors. The generator is the Mersenne Twister the original's runtime uses; spawners without a seed of their own repeat when replayed instead of following the clock. Not yet: paths as spawn region, bounding box or attractor |
 | Particle editor | not started |
 | Audio decoding, playback, waveforms | partial: sound resources (MP3, Ogg Vorbis, WAV, FLAC, AAC) decoded to 44.1 kHz stereo; audio timelines with sound keyframes (volume, pitch, start, end as in `tl_keyframe_length`); added from the workbench; played along with the animation as one mix; shown as clips on the timeline. Not yet: waveforms in the clips, resizing clips by dragging, WMA files |
 | Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
@@ -154,7 +154,7 @@ Legend: **done** · **partial** · **not started**
 | Template editor, timeline editor, frame editor | partial | Frame editor: all number, switch, colour, choice and text values of the selected timelines, by group. Timeline editor: inherit, appearance and lock switches. Not yet: values that refer to other objects (textures, paths, IK targets, sounds), the bezier curve editor, the template editor |
 | Ground editor | not started | |
 | Settings (program, interface, controls) | not started | |
-| Workbench and placing objects | partial | Workbench with search for basic objects, text, scenery and sound files, characters, special blocks, blocks and items; new objects appear at the origin instead of being placed with the mouse |
+| Workbench and placing objects | partial | Workbench with search for basic objects, text, particle presets, scenery and sound files, characters, special blocks, blocks and items; new objects appear at the origin instead of being placed with the mouse |
 | Toolbar menus, context menus, tooltips, toasts, shortcut bar | not started | |
 | Popups (new project, save as, export, skin download, pattern and armour editors, ...) | partial | Export animation; saving and opening use the system dialogs |
 | Themes and accent colours, interface scale | not started | |

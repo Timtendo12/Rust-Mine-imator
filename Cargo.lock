@@ -2327,6 +2327,7 @@ dependencies = [
  "mi-core",
  "mi-format",
  "mi-mesh",
+ "mi-particles",
  "mi-project",
  "mi-render",
  "pollster",

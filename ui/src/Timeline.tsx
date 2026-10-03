@@ -78,6 +78,8 @@ interface Props {
   onCreateScenery: () => void;
   /** Asks for a sound file and adds it at the playhead. */
   onCreateAudio: () => void;
+  /** Adds a particle spawner from a preset, or (null) from a file. */
+  onCreateParticles: (preset: string | null) => void;
   /** Moves timelines under `parent` (the root for null) at `index` among its other children, or at the end. */
   onReparent: (ids: string[], parent: string | null, index: number | null) => void;
   onToggleHidden: (id: string, hidden: boolean) => void;
@@ -344,7 +346,7 @@ export function Timeline(props: Props) {
           <button onClick={() => onSeek(Math.floor(marker))} title="Stop" disabled={!playing}>
             ■
           </button>
-          <button onClick={() => onPlay(!playing)} title={playing ? "Pause" : "Play"} disabled={project.length === 0}>
+          <button onClick={() => onPlay(!playing)} title={playing ? "Pause" : "Play"}>
             {playing ? "❚❚" : "▶"}
           </button>
           <button onClick={() => nextKeyframe !== undefined && onSeek(nextKeyframe)} title="Next keyframe" disabled={nextKeyframe === undefined}>
@@ -399,6 +401,7 @@ export function Timeline(props: Props) {
                 onCreateText={props.onCreateText}
                 onCreateScenery={props.onCreateScenery}
                 onCreateAudio={props.onCreateAudio}
+                onCreateParticles={props.onCreateParticles}
                 onClose={() => setCreating(null)}
               />
             )}

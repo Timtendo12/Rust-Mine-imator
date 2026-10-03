@@ -370,6 +370,13 @@ export const createScenery = (path: string) => invoke<Edited & { created: string
 export const setModelSkin = (timelines: string[], path: string | null) =>
   invoke<Edited>("set_model_skin", { timelines, path });
 
+/** Names of the particle presets that ship with the program. */
+export const particlePresets = () => invoke<string[]>("particle_presets");
+
+/** Adds a particle spawner from a preset, or from a .miparticles file. */
+export const createParticles = (preset: string | null, path: string | null = null) =>
+  invoke<Edited & { created: string[] }>("create_particles", { preset, path });
+
 /** Adds a text object. */
 export const createText = () => invoke<Edited & { created: string[] }>("create_text");
 
