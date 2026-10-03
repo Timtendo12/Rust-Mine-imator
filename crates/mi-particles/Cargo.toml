@@ -1,0 +1,11 @@
+[package]
+name = "mi-particles"
+description = "Mine-imator: simulation of particle spawners"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mi-anim = { workspace = true }
+mi-core = { workspace = true }
+mi-format = { workspace = true }

@@ -2278,6 +2278,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-particles"
+version = "0.1.0"
+dependencies = [
+ "mi-anim",
+ "mi-core",
+ "mi-format",
+]
+
+[[package]]
 name = "mi-project"
 version = "0.1.0"
 dependencies = [

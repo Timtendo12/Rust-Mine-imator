@@ -15,6 +15,7 @@ mi-assets = { path = "crates/mi-assets" }
 mi-audio = { path = "crates/mi-audio" }
 mi-format = { path = "crates/mi-format" }
 mi-mesh = { path = "crates/mi-mesh" }
+mi-particles = { path = "crates/mi-particles" }
 mi-project = { path = "crates/mi-project" }
 mi-render = { path = "crates/mi-render" }
 serde = { version = "1", features = ["derive"] }
