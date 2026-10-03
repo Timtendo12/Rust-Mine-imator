@@ -1092,3 +1092,120 @@ input.swatch-color {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Timeline region and markers */
+
+.transport button.active {
+  color: var(--accent);
+}
+
+.region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  pointer-events: none;
+}
+
+.region-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: var(--accent);
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.region-edge.start {
+  left: -8px;
+  border-radius: 3px 0 0 3px;
+}
+
+.region-edge.end {
+  right: -8px;
+  border-radius: 0 3px 3px 0;
+}
+
+.region-band {
+  position: absolute;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-left: 1px solid var(--accent-dim);
+  border-right: 1px solid var(--accent-dim);
+  pointer-events: none;
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  max-width: 120px;
+  padding: 0 4px;
+  overflow: hidden;
+  border-left: 2px solid currentColor;
+  background: color-mix(in srgb, currentColor 22%, var(--panel));
+  font-size: 10px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.marker-line {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.marker-editor {
+  position: absolute;
+  top: 28px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 200px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--raised);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.marker-editor input {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+}
+
+.marker-colors {
+  display: flex;
+  gap: 4px;
+}
+
+.marker-colors button {
+  flex: 1;
+  height: 14px;
+  min-width: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 3px;
+}
+
+.marker-colors button.active {
+  border-color: var(--text);
+}
+
+.marker-buttons {
+  display: flex;
+  justify-content: space-between;
+}

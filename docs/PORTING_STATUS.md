@@ -79,7 +79,7 @@ Legend: **done** · **partial** · **not started**
 | Inherit pose | partial: implemented, not covered by a test yet |
 | Camera orbit | done |
 | Camera shake | done: the simplex noise of the original (`simplex_lib`), turning or moving the active camera |
-| Playback | partial: driven by the frontend clock; looping and regions not yet |
+| Playback | done: driven by the frontend clock at the project tempo; repeat and seamless repeat loop the region or the whole animation. Without a repeat mode playback stops at the last keyframe instead of running on |
 
 ## Assets
 
@@ -133,7 +133,7 @@ Legend: **done** · **partial** · **not started**
 | Particle editor | not started |
 | Audio decoding, playback, waveforms | not started |
 | Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
-| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. Not yet: audio, timeline regions, high quality, hidden objects, removing the background, watermark, remembering the settings |
+| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. The region is exported when there is one. Not yet: audio, high quality, hidden objects, removing the background, watermark, remembering the settings |
 
 ## User interface
 
@@ -144,10 +144,10 @@ Legend: **done** · **partial** · **not started**
 | Properties panel | partial | Project settings (name, author, description, render size, tempo), render settings (samples, distance, main effects), environment (time, rotation, clouds, ground, twilight, fog, wind, scene colours, texture speed) are editable with undo; library and resources are read-only. The selected timeline has a frame editor with every number, switch, colour, choice and text value its type supports (position, rotation, scale, bend, colour, surface, light, camera effects, background, text, visibility and transition), grouped like the original's; values that point at other objects (textures, paths, IK targets, sounds) and the bezier handles are not editable yet. Its settings that are not animated can be switched too: what it inherits from its parent, appearance options, and lock and hide flags |
 | Display names of unnamed timelines | done | From type, model part, block or template, through the language file |
 | Shortcut bar | partial | Static hints for the viewport |
-| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). No markers, regions, audio or box selection. |
+| Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). Region (right drag on the ruler, edges dragged), repeat modes, markers (added at the playhead, dragged, edited by double click). No audio or box selection. |
 | Docking panels, pop-out windows | not started | |
 | Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move and rotate tools. No second view or overlays. |
-| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes and reparenting; markers, regions and audio clips not yet |
+| Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes, reparenting, markers and regions; audio clips not yet |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |
 | Properties tabs (project, render, library, background, resources) | partial | Project, render and background settings are edited in the properties panel; library and resources only list what the project has |

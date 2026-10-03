@@ -9,7 +9,7 @@
 
 use crate::Project;
 use mi_core::SaveId;
-use mi_format::project::{Background, ProjectInfo, RenderSettings, Resource, Template, Timeline};
+use mi_format::project::{Background, Marker, ProjectInfo, RenderSettings, Resource, Template, Timeline};
 
 /// Steps kept for undo (`history_max` in the original is 100).
 pub const HISTORY_LIMIT: usize = 100;
@@ -22,6 +22,7 @@ enum Snapshot {
     Template { id: SaveId, index: usize, template: Option<Box<Template>> },
     Resource { id: SaveId, index: usize, resource: Option<Box<Resource>> },
     Info(Box<ProjectInfo>),
+    Markers(Vec<Marker>),
     Background(Box<Background>),
     Render(Box<RenderSettings>),
 }
@@ -33,6 +34,7 @@ impl Snapshot {
             (Snapshot::Template { id: a, .. }, Snapshot::Template { id: b, .. }) => a == b,
             (Snapshot::Resource { id: a, .. }, Snapshot::Resource { id: b, .. }) => a == b,
             (Snapshot::Info(_), Snapshot::Info(_))
+            | (Snapshot::Markers(_), Snapshot::Markers(_))
             | (Snapshot::Background(_), Snapshot::Background(_))
             | (Snapshot::Render(_), Snapshot::Render(_)) => true,
             _ => false,
@@ -177,6 +179,12 @@ impl Edit<'_> {
         &mut self.project.file.info
     }
 
+    /// The markers of the timeline, all of them.
+    pub fn markers(&mut self) -> &mut Vec<Marker> {
+        self.record(|p| Snapshot::Markers(p.file.markers.clone()), &Snapshot::Markers(Vec::new()));
+        &mut self.project.file.markers
+    }
+
     pub fn background(&mut self) -> &mut Background {
         self.record(
             |p| Snapshot::Background(Box::new(p.file.background.clone())),
@@ -280,6 +288,7 @@ impl Project {
                 }
             }
             Snapshot::Info(_) => Snapshot::Info(Box::new(self.file.info.clone())),
+            Snapshot::Markers(_) => Snapshot::Markers(self.file.markers.clone()),
             Snapshot::Background(_) => Snapshot::Background(Box::new(self.file.background.clone())),
             Snapshot::Render(_) => Snapshot::Render(Box::new(self.file.render.clone())),
         }
@@ -329,6 +338,7 @@ impl Project {
                     self.rebuild_indices();
                 }
                 Snapshot::Info(info) => self.file.info = (**info).clone(),
+                Snapshot::Markers(markers) => self.file.markers = markers.clone(),
                 Snapshot::Background(background) => self.file.background = (**background).clone(),
                 Snapshot::Render(render) => self.file.render = (**render).clone(),
             }

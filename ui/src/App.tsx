@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
+  addMarker,
   appInfo,
   backupProject,
   closeProject,
@@ -10,6 +11,8 @@ import {
   createItem,
   createScenery,
   createText,
+  cycleRepeat,
+  editMarker,
   createKeyframes,
   createModel,
   createTimeline,
@@ -25,11 +28,13 @@ import {
   projectSettings,
   redo,
   removeKeyframes,
+  removeMarker,
   removeTimelines,
   renameTimeline,
   reparentTimelines,
   saveProject,
   setProjectInfo,
+  setRegion,
   setSelection,
   setTimelineSetting,
   setSetting,
@@ -184,12 +189,20 @@ export function App() {
   // Playback: advance the marker from the wall clock at the project tempo.
   useEffect(() => {
     if (!playing || !project) return;
-    const startTime = performance.now();
-    const startMarker = marker >= project.length ? 0 : marker;
+    // With a repeat mode the region, or else the whole animation, loops
+    // (`app_update_play`); without one playback stops at the end.
+    const [loopStart, loopEnd] = project.region ?? [0, project.length];
+    const repeating = project.repeat !== "none" && loopEnd > loopStart;
+    let startTime = performance.now();
+    let startMarker = marker >= (repeating ? loopEnd : project.length) ? (repeating ? loopStart : 0) : marker;
     let handle = 0;
     const tick = () => {
-      const next = startMarker + ((performance.now() - startTime) / 1000) * project.tempo;
-      if (project.length > 0 && next >= project.length) {
+      let next = startMarker + ((performance.now() - startTime) / 1000) * project.tempo;
+      if (repeating && next >= loopEnd) {
+        startTime = performance.now();
+        startMarker = loopStart;
+        next = loopStart;
+      } else if (!repeating && project.length > 0 && next >= project.length) {
         setMarker(project.length);
         setPlaying(false);
         return;
@@ -514,6 +527,7 @@ export function App() {
         { label: project.undo ? `Undo ${project.undo.toLowerCase()}` : "Undo", action: project.undo ? doUndo : undefined, shortcut: "Ctrl+Z" },
         { label: project.redo ? `Redo ${project.redo.toLowerCase()}` : "Redo", action: project.redo ? doRedo : undefined, shortcut: "Ctrl+Y" },
         { label: "Select all", action: selectAll, shortcut: "Ctrl+A" },
+        { label: "Add marker", action: () => void run(addMarker) },
         { label: "Create keyframe", action: selected ? () => void createKeyframe() : undefined, shortcut: "Ctrl+Q" },
         { label: "Copy keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(false) : undefined, shortcut: "Ctrl+C" },
         { label: "Cut keyframes", action: selectedKeyframes.length > 0 ? () => copySelectedKeyframes(true) : undefined, shortcut: "Ctrl+X" },
@@ -582,6 +596,11 @@ export function App() {
             playing={playing}
             onSeek={seek}
             onHoverFrame={(f) => (hoverFrame.current = f)}
+            onSetRegion={(start, end) => void run(() => setRegion(start, end))}
+            onCycleRepeat={() => void run(cycleRepeat)}
+            onAddMarker={() => void run(addMarker)}
+            onEditMarker={(id, change, merge) => void run(() => editMarker(id, change, merge))}
+            onRemoveMarker={(id) => void run(() => removeMarker(id))}
             onSelect={select}
             onSelectKeyframes={setSelectedKeyframes}
             onMoveKeyframes={(keys, offset) => void moveSelected(keys, offset)}

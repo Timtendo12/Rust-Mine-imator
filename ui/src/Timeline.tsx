@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
-import type { CreatableKind, FrameState, KeyframeKey, ProjectSummary, TimelineSummary } from "./backend";
+import type { CreatableKind, FrameState, KeyframeKey, MarkerChange, MarkerSummary, ProjectSummary, TimelineSummary } from "./backend";
 import { Workbench } from "./Workbench";
 
 const ROW_HEIGHT = 24;
@@ -7,6 +7,15 @@ const RULER_HEIGHT = 26;
 const MIN_FRAMES = 120;
 /** Space before frame 0 so that keyframes there are not cut off. */
 const PADDING = 10;
+
+/** Colour tags of markers: the accent colours of the original's dark theme. */
+const MARKER_COLORS = ["#FF7E76", "#FFA360", "#FFF065", "#8BFF6D", "#4EF390", "#49EED9", "#98BBFF", "#DF9CFF", "#FF9BC5"];
+
+const REPEAT_TITLES = {
+  none: "Repeat: off",
+  repeat: "Repeat: on",
+  seamless: "Repeat: seamless (the end runs into the start)",
+};
 
 /** Where a dragged timeline would land relative to the row under the pointer. */
 type DropZone = "before" | "into" | "after";
@@ -47,6 +56,13 @@ interface Props {
   onSeek: (marker: number) => void;
   /** The frame under the mouse in the tracks, or null when it is elsewhere. */
   onHoverFrame: (frame: number | null) => void;
+  /** Sets the region between two frames; null, or equal frames, removes it. */
+  onSetRegion: (start: number | null, end: number | null) => void;
+  onCycleRepeat: () => void;
+  /** Adds a marker at the playhead. */
+  onAddMarker: () => void;
+  onEditMarker: (id: string, change: MarkerChange, merge: string | null) => void;
+  onRemoveMarker: (id: string) => void;
   onSelect: (id: string, mode: SelectMode) => void;
   onSelectKeyframes: (keys: KeyframeKey[]) => void;
   /** Called while dragging with the total offset from where the drag began. */
@@ -169,6 +185,67 @@ export function Timeline(props: Props) {
   const width = PADDING + frames * zoom;
   const frameX = (f: number) => PADDING + f * zoom;
 
+  const frameAt = (clientX: number) => {
+    const element = tracks.current;
+    if (!element) return 0;
+    return Math.max(0, Math.round((clientX - element.getBoundingClientRect().left - PADDING) / zoom));
+  };
+
+  // The region: a right drag on the ruler makes one, its edges are dragged
+  // with the left button. `anchor` is the end that stays.
+  const regionDrag = useRef<{ pointer: number; anchor: number; last: number } | null>(null);
+  const regionDown = (event: PointerEvent<HTMLElement>, anchor: number) => {
+    event.stopPropagation();
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    regionDrag.current = { pointer: event.pointerId, anchor, last: anchor };
+    onPlay(false);
+  };
+  const regionMove = (event: PointerEvent<HTMLElement>) => {
+    const current = regionDrag.current;
+    if (!current || current.pointer !== event.pointerId) return false;
+    const frame = frameAt(event.clientX);
+    if (frame !== current.last) {
+      current.last = frame;
+      props.onSetRegion(current.anchor, frame);
+    }
+    return true;
+  };
+  const regionUp = (event: PointerEvent<HTMLElement>) => {
+    const current = regionDrag.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    regionDrag.current = null;
+    // A right click without dragging removes the region.
+    if (current.last === current.anchor) props.onSetRegion(null, null);
+  };
+
+  // Markers: dragged along the ruler; a double click opens their editor.
+  const markerDrag = useRef<{ pointer: number; id: string; last: number; moved: boolean } | null>(null);
+  const [editingMarker, setEditingMarker] = useState<string | null>(null);
+  const markerDown = (event: PointerEvent<HTMLElement>, marker: MarkerSummary) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    markerDrag.current = { pointer: event.pointerId, id: marker.id, last: marker.position, moved: false };
+  };
+  const markerMove = (event: PointerEvent<HTMLElement>) => {
+    const current = markerDrag.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    const frame = frameAt(event.clientX);
+    if (frame !== current.last) {
+      current.last = frame;
+      current.moved = true;
+      props.onEditMarker(current.id, { position: frame }, "move-marker");
+    }
+  };
+  const markerUp = (event: PointerEvent<HTMLElement>) => {
+    const current = markerDrag.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    markerDrag.current = null;
+    if (current.moved) props.onMoveDone();
+    else onSeek(current.last);
+  };
+
   const seekFromPointer = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const element = tracks.current;
@@ -182,10 +259,16 @@ export function Timeline(props: Props) {
   );
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button === 2) {
+      regionDown(event, frameAt(event.clientX));
+      return;
+    }
+    if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     seekFromPointer(event);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (regionMove(event)) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) seekFromPointer(event);
   };
 
@@ -267,6 +350,28 @@ export function Timeline(props: Props) {
           </button>
           <button onClick={() => onSeek(project.length)} title="Last frame">
             ⏭
+          </button>
+          <button
+            className={project.repeat === "none" ? "" : "active"}
+            onClick={props.onCycleRepeat}
+            title={REPEAT_TITLES[project.repeat]}
+          >
+            {project.repeat === "seamless" ? "∞" : "↻"}
+          </button>
+          <button
+            onClick={() => {
+              if (project.region) {
+                onSeek(project.region[0]);
+                onPlay(true);
+              }
+            }}
+            title="Play the region from its start"
+            disabled={!project.region}
+          >
+            ▷
+          </button>
+          <button onClick={props.onAddMarker} title="Add a marker at the current frame">
+            ⚑
           </button>
         </div>
         <span className="spacer" />
@@ -369,13 +474,66 @@ export function Timeline(props: Props) {
               style={{ height: RULER_HEIGHT }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
+              onPointerUp={regionUp}
+              onPointerCancel={regionUp}
+              onContextMenu={(e) => e.preventDefault()}
+              title="Drag to move the playhead; drag with the right button to set the region"
             >
               {labels.map((f) => (
                 <span key={f} className="ruler-label" style={{ left: frameX(f) }}>
                   {f}
                 </span>
               ))}
+              {project.region && (
+                <div className="region" style={{ left: frameX(project.region[0]), width: (project.region[1] - project.region[0]) * zoom }}>
+                  {[0, 1].map((edge) => (
+                    <span
+                      key={edge}
+                      className={edge === 0 ? "region-edge start" : "region-edge end"}
+                      title="Drag to resize the region"
+                      onPointerDown={(e) => e.button === 0 && regionDown(e, project.region![1 - edge])}
+                      onPointerMove={regionMove}
+                      onPointerUp={(e) => {
+                        // Releasing an edge where it started keeps the region.
+                        if (regionDrag.current) regionDrag.current.last = -1;
+                        regionUp(e);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              {project.markerList.map((m) => (
+                <span
+                  key={m.id}
+                  className="marker"
+                  style={{ left: frameX(m.position), color: MARKER_COLORS[m.color] ?? MARKER_COLORS[0] }}
+                  title={`${m.name} (frame ${m.position}). Drag to move, double click to edit`}
+                  onPointerDown={(e) => markerDown(e, m)}
+                  onPointerMove={markerMove}
+                  onPointerUp={markerUp}
+                  onPointerCancel={markerUp}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingMarker(m.id);
+                  }}
+                >
+                  {m.name}
+                </span>
+              ))}
             </div>
+            {project.region && (
+              <div
+                className="region-band"
+                style={{ left: frameX(project.region[0]), width: (project.region[1] - project.region[0]) * zoom, top: RULER_HEIGHT }}
+              />
+            )}
+            {project.markerList.map((m) => (
+              <div
+                key={m.id}
+                className="marker-line"
+                style={{ left: frameX(m.position), top: RULER_HEIGHT, background: MARKER_COLORS[m.color] ?? MARKER_COLORS[0] }}
+              />
+            ))}
 
             {rows.map(({ timeline }) => (
               <div
@@ -408,6 +566,48 @@ export function Timeline(props: Props) {
 
             <div className="playhead" style={{ left: frameX(marker) }} />
           </div>
+          {(() => {
+            const m = project.markerList.find((marker) => marker.id === editingMarker);
+            if (!m) return null;
+            return (
+              <div className="marker-editor" style={{ left: Math.max(4, frameX(m.position) - 8) }} onPointerDown={(e) => e.stopPropagation()}>
+                <input
+                  autoFocus
+                  defaultValue={m.name}
+                  aria-label="Marker label"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                  }}
+                  onBlur={(e) => {
+                    if (e.currentTarget.value !== m.name) props.onEditMarker(m.id, { name: e.currentTarget.value }, null);
+                  }}
+                />
+                <div className="marker-colors">
+                  {MARKER_COLORS.map((color, index) => (
+                    <button
+                      key={color}
+                      className={index === m.color ? "active" : ""}
+                      style={{ background: color }}
+                      title="Colour"
+                      onClick={() => props.onEditMarker(m.id, { color: index }, null)}
+                    />
+                  ))}
+                </div>
+                <div className="marker-buttons">
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setEditingMarker(null);
+                      props.onRemoveMarker(m.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button onClick={() => setEditingMarker(null)}>Done</button>
+                </div>
+              </div>
+            );
+          })()}
           {project.timelines.length === 0 && (
             <p className="timeline-empty">Nothing here yet! This project has no timelines.</p>
           )}

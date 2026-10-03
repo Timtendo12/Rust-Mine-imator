@@ -57,6 +57,14 @@ export interface RecentItem {
   thumbnail: string | null;
 }
 
+export interface MarkerSummary {
+  id: string;
+  position: number;
+  name: string;
+  /** Index of its colour tag. */
+  color: number;
+}
+
 export interface ProjectSummary {
   path: string | null;
   renderSettings: string;
@@ -75,6 +83,12 @@ export interface ProjectSummary {
   templates: number;
   resources: number;
   markers: number;
+  /** The markers of the timeline, by position. */
+  markerList: MarkerSummary[];
+  /** What playback does at the end. */
+  repeat: "none" | "repeat" | "seamless";
+  /** First and last frame of the region that is played and exported. */
+  region: [number, number] | null;
   cameras: number;
   /** In tree order: every parent is followed by its children. */
   timelines: TimelineSummary[];
@@ -222,6 +236,27 @@ export const setTimelinesHidden = (timelines: string[], hidden: boolean) =>
 export const undo = () => invoke<Edited>("undo");
 
 export const redo = () => invoke<Edited>("redo");
+
+/** Sets the region that is played and exported, or removes it (null, or both ends equal). */
+export const setRegion = (start: number | null, end: number | null) => invoke<Edited>("set_region", { start, end });
+
+/** Steps to the next repeat mode: none, repeat, seamless. */
+export const cycleRepeat = () => invoke<Edited>("cycle_repeat");
+
+/** Adds a marker at the current frame. */
+export const addMarker = () => invoke<Edited>("add_marker");
+
+export interface MarkerChange {
+  position?: number;
+  name?: string;
+  color?: number;
+}
+
+/** Moves, renames or recolours a marker; moves with the same `merge` key are one undo step. */
+export const editMarker = (id: string, change: MarkerChange, merge: string | null = null) =>
+  invoke<Edited>("edit_marker", { id, ...change, merge });
+
+export const removeMarker = (id: string) => invoke<Edited>("remove_marker", { id });
 
 /** Writes a backup next to the project if it changed; gives the file written. */
 export const backupProject = () => invoke<string | null>("backup_project");

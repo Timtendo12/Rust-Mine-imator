@@ -87,6 +87,16 @@ pub struct EnvironmentSummary {
     texture_animation_speed: f64,
 }
 
+/// A marker of the timeline.
+#[derive(Debug, Serialize)]
+pub struct MarkerSummary {
+    id: String,
+    position: f64,
+    name: String,
+    /// Index of its colour tag.
+    color: f64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
@@ -110,6 +120,12 @@ pub struct ProjectSummary {
     templates: usize,
     resources: usize,
     markers: usize,
+    /// The markers of the timeline, by position.
+    marker_list: Vec<MarkerSummary>,
+    /// `none`, `repeat` or `seamless`.
+    repeat: &'static str,
+    /// First and last frame of the region that is played and exported.
+    region: Option<[i64; 2]>,
     cameras: usize,
     /// Timelines in tree order.
     timelines: Vec<TimelineSummary>,
@@ -158,6 +174,17 @@ pub(crate) fn summarize(project: &Project, language: &mi_format::language::Langu
         templates: project.templates().len(),
         resources: project.resources().len(),
         markers: file.markers.len(),
+        marker_list: file
+            .markers
+            .iter()
+            .map(|m| MarkerSummary { id: m.id.to_string(), position: m.position, name: m.name.clone(), color: m.color })
+            .collect(),
+        repeat: match project.repeat() {
+            mi_project::Repeat::None => "none",
+            mi_project::Repeat::Repeat => "repeat",
+            mi_project::Repeat::Seamless => "seamless",
+        },
+        region: project.region().map(|(start, end)| [start, end]),
         cameras: timelines.iter().filter(|tl| tl.kind == TlType::Camera).count(),
         timelines: project
             .tree()
@@ -308,15 +335,17 @@ pub fn export_movie(
     let failed = |reason: String| CommandError::Write { path: path.clone(), reason };
     let format = Format::from_name(&format).ok_or_else(|| CommandError::Invalid(format!("unknown export format {format}")))?;
     let options = MovieOptions { format, frames_per_second: frames_per_second.clamp(1.0, 120.0), bit_rate: bit_rate.max(1) };
-    let (size, tempo, end) = {
+    // The region is exported if there is one, else everything.
+    let (size, tempo, start, end) = {
         let guard = state.project();
         let project = guard.as_ref().ok_or(CommandError::NoProject)?;
         let info = &project.file().info;
-        ((info.video_width.max(1.0) as u32, info.video_height.max(1.0) as u32), info.tempo.max(1.0), project.length() as f64)
+        let (start, end) = project.region().unwrap_or((0, project.length()));
+        ((info.video_width.max(1.0) as u32, info.video_height.max(1.0) as u32), info.tempo.max(1.0), start as f64, end as f64)
     };
     let viewport = state.viewport().ok_or_else(|| failed("the viewport is not running".into()))?;
-    let markers = export::frame_markers(0.0, end, tempo, options.frames_per_second);
-    let sequence_total = export::sequence_total(0.0, end, tempo, options.frames_per_second);
+    let markers = export::frame_markers(start, end, tempo, options.frames_per_second);
+    let sequence_total = export::sequence_total(start, end, tempo, options.frames_per_second);
     let total = markers.len();
 
     let previous = state.view().marker;

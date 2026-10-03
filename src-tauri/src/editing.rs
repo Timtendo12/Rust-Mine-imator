@@ -219,6 +219,54 @@ pub fn save_project(path: Option<String>, app: tauri::AppHandle, state: State<'_
     Ok(edited)
 }
 
+/// Sets the region that is played and exported to the frames between
+/// `start` and `end`, or removes it when either is absent or they are equal.
+#[tauri::command]
+pub fn set_region(start: Option<i64>, end: Option<i64>, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    Ok(change(&state, |p| p.set_region(start.zip(end)))?.1)
+}
+
+/// Steps to the next repeat mode: none, repeat, seamless.
+#[tauri::command]
+pub fn cycle_repeat(state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    Ok(change(&state, |p| p.cycle_repeat())?.1)
+}
+
+/// Adds a marker at the current frame.
+#[tauri::command]
+pub fn add_marker(state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    let position = state.view().marker.round() as i64;
+    let mut name = state.language().text("timelinemarkernew", &[]);
+    if name.starts_with('<') {
+        name = "New marker".to_owned();
+    }
+    Ok(change(&state, |p| p.add_marker(position, &name))?.1)
+}
+
+/// Moves, renames or recolours a marker; absent parts stay as they are.
+/// Moves with the same `merge` key in a row are one undo step.
+#[tauri::command]
+pub fn edit_marker(
+    id: String,
+    position: Option<i64>,
+    name: Option<String>,
+    color: Option<u32>,
+    merge: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Edited, CommandError> {
+    let marker_change = mi_project::MarkerChange { position, name, color };
+    let (found, edited) = change(&state, |p| p.edit_marker(&SaveId::new(&id), marker_change, merge.as_deref()))?;
+    if !found {
+        return Err(CommandError::Invalid(format!("unknown marker {id}")));
+    }
+    Ok(edited)
+}
+
+#[tauri::command]
+pub fn remove_marker(id: String, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    Ok(change(&state, |p| p.remove_marker(&SaveId::new(&id)))?.1)
+}
+
 /// Backups kept next to a project (`setting_backup_amount`).
 const BACKUP_AMOUNT: usize = 5;
 
