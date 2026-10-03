@@ -186,6 +186,8 @@ pub struct AssetPack {
     model_files: Mutex<HashMap<String, Arc<ModelFile>>>,
     manifest: JsonObject,
     blocks: std::sync::OnceLock<crate::Blocks>,
+    /// Whether a block texture is animated, once it has been looked at.
+    animated: Mutex<HashMap<String, bool>>,
 }
 
 impl std::fmt::Debug for AssetPack {
@@ -222,7 +224,7 @@ impl AssetPack {
                 models.insert(def.name.clone(), def);
             }
         }
-        Ok(Self { archive: Mutex::new(archive), models, model_order, model_files: Mutex::default(), manifest, blocks: Default::default() })
+        Ok(Self { archive: Mutex::new(archive), models, model_order, model_files: Mutex::default(), manifest, blocks: Default::default(), animated: Mutex::default() })
     }
 
     /// Opens the pack from the `Data/Minecraft` folder for `version`.
@@ -308,6 +310,44 @@ impl AssetPack {
     pub fn texture(&self, name: &str) -> Option<Rgba> {
         let bytes = self.read(&format!("textures/{name}.png"))?;
         decode_square(&bytes)
+    }
+
+    /// A block texture with all its images, and how it is animated.
+    fn stacked_block_texture(&self, name: &str) -> Option<(Rgba, crate::TextureAnimation)> {
+        let bytes = self.read(&format!("textures/{name}.png"))?;
+        let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+        let (width, height) = image.dimensions();
+        if crate::animation::image_count(width, height) < 2 {
+            return None;
+        }
+        let animation = self
+            .read(&format!("textures/{name}.png.mcmeta"))
+            .map(|meta| crate::TextureAnimation::parse(&meta))
+            .unwrap_or_default();
+        Some((Rgba { width, height, pixels: image.into_raw() }, animation))
+    }
+
+    /// Whether a block texture changes over time (water, lava, fire, ...).
+    pub fn block_texture_animated(&self, name: &str) -> bool {
+        let mut known = self.animated.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(&animated) = known.get(name) {
+            return animated;
+        }
+        let animated = self.stacked_block_texture(name).is_some_and(|(image, animation)| {
+            animation.is_animated(crate::animation::image_count(image.width, image.height))
+        });
+        known.insert(name.to_owned(), animated);
+        animated
+    }
+
+    /// What an animated block texture shows at a frame of the loop all
+    /// animated textures share (see [`crate::sheet_frame`]); other textures
+    /// as [`AssetPack::block_texture`] gives them.
+    pub fn block_texture_frame(&self, name: &str, frame: u32) -> Option<Rgba> {
+        match self.stacked_block_texture(name) {
+            Some((image, animation)) => Some(crate::animation::frame_image(&image, &animation, frame)),
+            None => self.block_texture(name),
+        }
     }
 
     /// A block texture; of animated textures (frames stacked vertically)

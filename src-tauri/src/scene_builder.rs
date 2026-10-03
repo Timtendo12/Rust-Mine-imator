@@ -259,6 +259,16 @@ fn texture_tint(pack: Option<&AssetPack>, name: &str, background: &Background) -
     }
 }
 
+/// A block texture at a frame of the loop animated textures share; still
+/// textures are loaded once.
+fn block_texture(resources: &mut dyn SceneResources, pack: &AssetPack, name: &str, frame: u32) -> Option<TextureId> {
+    if pack.block_texture_animated(name) {
+        resources.texture(format!("block:{name}:{frame}"), &|| pack.block_texture_frame(name, frame))
+    } else {
+        resources.texture(format!("block:{name}"), &|| pack.block_texture(name))
+    }
+}
+
 fn pack_texture(resources: &mut dyn SceneResources, pack: Option<&AssetPack>, name: &str) -> Option<TextureId> {
     let pack = pack?;
     resources.texture(format!("pack:{name}"), &|| pack.texture(name))
@@ -358,6 +368,9 @@ pub fn build_scene(
     let mut objects = Vec::new();
     let mut lights = Vec::new();
     let unlit = mode == ViewMode::Flat;
+    // Water, lava, fire and the like move with the animation's time.
+    let seconds = marker / file.info.tempo.max(1.0);
+    let texture_frame = mi_assets::sheet_frame(seconds, background.texture_animation_speed);
 
     // Sky
     let sky = sky_settings(background, render.distance);
@@ -518,7 +531,7 @@ pub fn build_scene(
                 let meshes = resources.meshes(key, &|| blocks.grid_meshes(pack, block, &full_state, size, randomize));
 
                 let matrix = block_turn(repeat[1]).then(&node.matrix_render).to_f32();
-                let look = BlockLook { pack, background, inherited, timeline, unlit };
+                let look = BlockLook { pack, background, inherited, timeline, unlit, texture_frame };
                 push_block_objects(&mut objects, resources, &meshes, matrix, &look);
             }
             TlType::Item => {
@@ -546,7 +559,7 @@ pub fn build_scene(
                     pack.block_texture(&name).map(|image| mi_assets::item_mesh(&image, is_3d)).unwrap_or_default()
                 });
                 let mut object = RenderObject::new(mesh, node.matrix_render.to_f32());
-                object.texture = resources.texture(format!("block:{name}"), &|| pack.block_texture(&name));
+                object.texture = block_texture(resources, pack, &name, texture_frame);
                 apply_material(&mut object, inherited, Color::WHITE, 1.0);
                 object.unlit = unlit;
                 object.fog = timeline.appearance.fog;
@@ -601,7 +614,7 @@ pub fn build_scene(
                 if copies > MAX_SCENERY_COPIES {
                     continue;
                 }
-                let look = BlockLook { pack, background, inherited, timeline, unlit };
+                let look = BlockLook { pack, background, inherited, timeline, unlit, texture_frame };
                 for rx in 0..repeat[0] as usize {
                     for ry in 0..repeat[1] as usize {
                         for rz in 0..repeat[2] as usize {
@@ -688,6 +701,8 @@ struct BlockLook<'a> {
     inherited: &'a Inherited,
     timeline: &'a mi_format::project::Timeline,
     unlit: bool,
+    /// Where animated textures are in their loop.
+    texture_frame: u32,
 }
 
 /// Adds an object per texture of a block mesh.
@@ -701,7 +716,7 @@ fn push_block_objects(
     let pack = look.pack;
     for (texture_name, mesh) in meshes {
         let mut object = RenderObject::new(*mesh, matrix);
-        object.texture = resources.texture(format!("block:{texture_name}"), &|| pack.block_texture(texture_name));
+        object.texture = block_texture(resources, pack, texture_name, look.texture_frame);
         apply_material(&mut object, look.inherited, texture_tint(Some(pack), texture_name, look.background), 1.0);
         object.unlit = look.unlit;
         object.fog = look.timeline.appearance.fog;

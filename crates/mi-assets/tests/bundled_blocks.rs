@@ -118,3 +118,21 @@ fn stairs_follow_their_facing() {
     assert!(east[0] > west[0], "{east:?} {west:?}");
     assert!(south[1] > north[1], "{south:?} {north:?}");
 }
+
+#[test]
+fn water_and_lava_are_animated_and_stone_is_not() {
+    let pack = pack();
+    assert!(pack.block_texture_animated("block/water_still"));
+    assert!(pack.block_texture_animated("block/lava_still"));
+    assert!(!pack.block_texture_animated("block/stone"));
+    assert!(!pack.block_texture_animated("block/no_such_texture"));
+
+    // Every frame is one square image; the picture changes over the loop.
+    let first = pack.block_texture_frame("block/water_still", 0).unwrap();
+    assert_eq!(first.width, first.height);
+    assert_eq!(first, pack.block_texture("block/water_still").unwrap());
+    let different = (1..mi_assets::SHEET_FRAMES).filter(|&f| pack.block_texture_frame("block/water_still", f).unwrap() != first).count();
+    assert!(different > 32, "{different}");
+    // A still texture is the same at every frame.
+    assert_eq!(pack.block_texture_frame("block/stone", 17), pack.block_texture("block/stone"));
+}

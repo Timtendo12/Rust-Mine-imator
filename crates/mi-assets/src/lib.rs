@@ -1,6 +1,7 @@
 //! Minecraft assets: the asset pack that ships with the program, models
 //! and their meshes, textures.
 
+pub mod animation;
 pub mod blocks;
 pub mod builder;
 pub mod item;
@@ -14,6 +15,7 @@ pub mod shape_mesh;
 pub mod sky;
 pub mod text;
 
+pub use animation::{sheet_frame, TextureAnimation, SHEET_FRAMES};
 pub use builder::{build_grid, Grid, GridBlock, GridSource};
 pub use blocks::{block_mesh, pick_weighted, BlockDef, Blocks, Depth, Dir, PlacedBlock, RandomOffset, RenderModel};
 pub use item::{item_mesh, ITEM_SIZE};
