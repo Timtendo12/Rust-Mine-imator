@@ -36,6 +36,7 @@ Fixes change behaviour in memory, not the layout on disk, so files stay readable
 | `part_root` is written for every timeline that is part of scenery but only read back for special blocks. | Read back for all of them. |
 | `BG_FOG_OBJECT_COLOR` is missing from the list of colour values, so it is written as a raw colour integer and is not clamped like other colours. | Treated as a colour everywhere; still written as the integer so the original can read it, and `#RRGGBB` is accepted too. |
 | A timeline whose `glint_tex` is `"null"` crashes on load. | Falls back to the built-in texture. |
+| With the wind switched off, timelines whose wind influence differs from the previous one drawn are still pushed along the wind direction by a constant amount: the shader's gust strength is set per timeline without the wind switch. | No wind means no movement. |
 | The inverse kinematics solver tests convergence against the wrong joint and so always runs all 30 rounds. | Stops when the end of the limb is on the target. Results are the same. |
 | Models that copy the pose of their parent model stop following paths. | Path following is kept in the pose pass. |
 | The tip of an inverted cone keeps an upward normal, so the inside of the cone is lit wrongly near the tip. | The normal is flipped with the rest. |

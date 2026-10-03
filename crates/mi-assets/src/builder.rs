@@ -12,7 +12,7 @@
 //! schematics with numeric ids (`legacy`) and repeated block templates.
 //! Modern schematics and structures keep their saved states.
 
-use crate::blocks::{block_mesh, face_culled, pick_weighted, position_hash, Depth, Dir, PlacedBlock, RandomOffset};
+use crate::blocks::{block_mesh, face_culled, pick_weighted, position_hash, BlockWave, Depth, Dir, PlacedBlock, RandomOffset};
 use crate::liquid::{liquid_mesh, LiquidSurroundings};
 use crate::{AssetPack, BlockDef, Blocks, RenderModel};
 use mi_mesh::MeshData;
@@ -802,6 +802,11 @@ pub fn build_grid(pack: &AssetPack, grid: &Grid) -> Vec<(String, MeshData)> {
                     store.list[id as usize].face_model(position_hash(n, 0), grid.randomize)
                 });
                 let leaves = block_at(grid, p).is_some_and(|b| b.def.kind == "leaves");
+                // The block sways above a height measured from its foot.
+                let wave = block_at(grid, p).map_or(BlockWave::default(), |b| BlockWave {
+                    axis: b.def.wind,
+                    zmin: b.def.wind_zmin.map(|min| z as f64 * BLOCK + min),
+                });
 
                 for (part, height) in &placement.parts {
                     let here: Vec<&RenderModel> =
@@ -829,7 +834,7 @@ pub fn build_grid(pack: &AssetPack, grid: &Grid) -> Vec<(String, MeshData)> {
                         Some((color, emissive)) => (color, emissive),
                         None => ([1.0; 4], part.emissive),
                     };
-                    block_mesh(&here, offset, emissive, color, &culled, &mut out);
+                    block_mesh(&here, offset, emissive, color, wave, &culled, &mut out);
                 }
             }
         }

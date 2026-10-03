@@ -41,6 +41,7 @@ fn scene(objects: Vec<RenderObject>) -> RenderScene {
         },
         lighting: SkySettings { sky_time: 0.0, ..Default::default() }.lighting(),
         background: SkySettings::default().sky_color,
+        wind: Default::default(),
         fog: Fog { show: false, color: [1.0; 3], distance: 1000.0, size: 100.0, height: 1000.0 },
         tonemapper: Tonemapper::None,
         exposure: 1.0,
@@ -326,4 +327,35 @@ fn sky_layers_stay_behind_the_world_and_can_add_light() {
     s.objects = vec![glow];
     let image = render(&gpu, &mut renderer, &s);
     assert!(near(centre(&image), [128, 64, 64]), "{:?}", centre(&image));
+}
+
+#[test]
+fn wind_moves_what_is_set_to_sway() {
+    use mi_render::{ObjectWind, Wind};
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+    let windy = |time: f32, wind: ObjectWind| {
+        let mut object = flat(cube, translation(0.0, 0.0, 0.0), [1.0, 0.0, 0.0, 1.0]);
+        object.wind = wind;
+        let mut s = scene(vec![object]);
+        s.wind = Wind { time, speed: 1.0, direction: [1.0, 0.0], gust_phase: 0.0 };
+        s
+    };
+    let covered = |image: &[u8]| (0..SIZE * SIZE).filter(|i| pixel(image, i % SIZE, i / SIZE)[0] == 255).count();
+    let whole = ObjectWind { whole: true, marked: true, strength: 6.0, directional_strength: 0.0 };
+
+    // A swaying object is drawn differently as time passes.
+    let early = render(&gpu, &mut renderer, &windy(1.0, whole));
+    let late = render(&gpu, &mut renderer, &windy(9.0, whole));
+    assert!(covered(&early) > 0 && early != late);
+    // Without strength, or when only marked vertices sway (the cube has
+    // none), nothing moves.
+    let still = ObjectWind { strength: 0.0, ..whole };
+    assert!(render(&gpu, &mut renderer, &windy(1.0, still)) == render(&gpu, &mut renderer, &windy(9.0, still)));
+    let marked = ObjectWind { whole: false, ..whole };
+    assert!(render(&gpu, &mut renderer, &windy(1.0, marked)) == render(&gpu, &mut renderer, &windy(9.0, marked)));
+    assert!(render(&gpu, &mut renderer, &windy(1.0, marked)) == render(&gpu, &mut renderer, &windy(1.0, ObjectWind::default())));
+    // Gusts push it along the wind.
+    let gusty = ObjectWind { directional_strength: 20.0, ..whole };
+    assert!(render(&gpu, &mut renderer, &windy(1.0, gusty)) != early);
 }

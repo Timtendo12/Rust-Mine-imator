@@ -96,6 +96,41 @@ pub struct BlockStateValue {
     pub random_offset: Option<bool>,
 }
 
+/// How the vertices of a block sway in the wind (`e_vertex_wave`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WaveAxis {
+    #[default]
+    None,
+    /// In every direction (leaves, plants).
+    All,
+    /// Up and down only (hanging and floating things, liquids).
+    ZOnly,
+}
+
+/// The wind sway of the vertices of one block in a mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BlockWave {
+    pub axis: WaveAxis,
+    /// Only vertices above this height sway, in units of the mesh: the
+    /// foot of a plant stays put.
+    pub zmin: Option<f64>,
+}
+
+impl BlockWave {
+    /// The wave part of a vertex at height `z`: sway sideways, sway up and
+    /// down (`vertex_add`).
+    pub fn at(&self, z: f64) -> [f32; 2] {
+        if self.zmin.is_some_and(|min| z <= min) {
+            return [0.0, 0.0];
+        }
+        match self.axis {
+            WaveAxis::None => [0.0, 0.0],
+            WaveAxis::All => [1.0, 1.0],
+            WaveAxis::ZOnly => [0.0, 1.0],
+        }
+    }
+}
+
 /// A block of the asset manifest (`obj_block`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockDef {
@@ -105,6 +140,10 @@ pub struct BlockDef {
     pub file: Option<String>,
     pub emissive: f64,
     pub subsurface: f64,
+    /// How it sways in the wind.
+    pub wind: WaveAxis,
+    /// Height in the block above which it sways; all of it when absent.
+    pub wind_zmin: Option<f64>,
     /// Placed as a timeline in scenery (chests, doors, beds, ...).
     pub timeline: bool,
     /// Drawn in the scenery as well as placed as a timeline.
@@ -172,6 +211,12 @@ impl BlockDef {
             file: map.string("file").map(str::to_owned),
             emissive: map.real("emissive").unwrap_or(0.0),
             subsurface: map.real("subsurface").unwrap_or(0.0),
+            wind: match map.object("wind").and_then(|w| w.string("axis")) {
+                Some("y") => WaveAxis::ZOnly,
+                Some(_) => WaveAxis::All,
+                None => WaveAxis::None,
+            },
+            wind_zmin: map.object("wind").and_then(|w| w.real("ymin")),
             timeline: map.object("timeline").is_some(),
             model_double: map.object("timeline").and_then(|t| t.flag("model_double")).unwrap_or(false),
             waterlogged: map.flag("waterlogged").unwrap_or(false),
@@ -902,17 +947,21 @@ pub(crate) fn face_culled(model: &RenderModel, element: &RenderElement, dir: Dir
 }
 
 /// Faces of a block grouped by texture, positioned at `offset` (in units,
-/// one block is 16), in a vertex colour. `culled` tells whether a face of
-/// an element is hidden.
+/// one block is 16), in a vertex colour and with a wind sway. `culled`
+/// tells whether a face of an element is hidden.
 pub fn block_mesh(
     models: &[&RenderModel],
     offset: Vec3,
     emissive: f64,
     color: [f32; 4],
+    wave: BlockWave,
     culled: &dyn Fn(&RenderModel, &RenderElement, Dir) -> bool,
     out: &mut HashMap<String, MeshData>,
 ) {
-    let custom = [0.0, 0.0, emissive as f32, 0.0];
+    let custom = |corner: [f64; 3]| {
+        let [xy, z] = wave.at(corner[2]);
+        [xy, z, emissive as f32, 0.0]
+    };
     for model in models {
         for element in &model.elements {
             let (mut f, mut t) = (element.from, element.to);
@@ -942,10 +991,11 @@ pub fn block_mesh(
                     None => corners,
                 };
                 let p = corners.map(|c| c.map(|v| v as f32));
+                let wave = corners.map(custom);
                 let uv = face.uv.map(|c| [(c[0] / BLOCK) as f32, (c[1] / BLOCK) as f32]);
                 let mesh = out.entry(face.texture.clone()).or_default();
-                mesh.triangle_with([p[0], p[1], p[2]], [uv[0], uv[1], uv[2]], None, false, [custom; 3]);
-                mesh.triangle_with([p[2], p[3], p[0]], [uv[2], uv[3], uv[0]], None, false, [custom; 3]);
+                mesh.triangle_with([p[0], p[1], p[2]], [uv[0], uv[1], uv[2]], None, false, [wave[0], wave[1], wave[2]]);
+                mesh.triangle_with([p[2], p[3], p[0]], [uv[2], uv[3], uv[0]], None, false, [wave[2], wave[3], wave[0]]);
                 if color != [1.0; 4] {
                     let n = mesh.vertices.len();
                     for vertex in &mut mesh.vertices[n - 6..] {

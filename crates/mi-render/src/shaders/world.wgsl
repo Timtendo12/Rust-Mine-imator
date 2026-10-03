@@ -1,7 +1,7 @@
 // World geometry in the low quality modes: unlit ("flat") or lit per vertex
 // by the sun and point lights ("shaded"), with fog.
-// Ported from shader_color_fog_lights.vsh / .fsh. Not ported yet: wind,
-// material maps, enchantment glint, alpha hashing.
+// Ported from shader_color_fog_lights.vsh / .fsh, with its wind. Not
+// ported yet: material maps, enchantment glint, alpha hashing.
 
 const MAX_LIGHTS: u32 = 64u;
 
@@ -17,6 +17,10 @@ struct Frame {
     fog: vec4<f32>,
     // x: tonemapper (0 none, 1 Reinhard, 2 ACES), y: exposure, z: gamma, w: light count
     tone: vec4<f32>,
+    // x: time, y: speed, zw: direction of the gusts
+    wind: vec4<f32>,
+    // x: how far the gusts have travelled
+    wind_gusts: vec4<f32>,
     // Two entries per light: position + range, colour. Light 0 is the sun.
     lights: array<vec4<f32>, 128>,
 }
@@ -34,6 +38,9 @@ struct Object {
     material: vec4<f32>,
     // x: unlit, y: ground (sun only), z: fog, w: unused
     flags: vec4<f32>,
+    // x: the whole object sways, y: marked vertices sway, z: strength,
+    // w: strength of the gusts
+    wind: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -59,10 +66,41 @@ struct VertexOutput {
     @location(5) custom: vec4<f32>,
 }
 
+const PI: f32 = 3.14159265;
+
+// GPU Gems 3, chapter 6
+fn gust_noise(v: f32) -> f32 {
+    return cos(v * PI) * cos(v * 3.0 * PI) * cos(v * 5.0 * PI) * cos(v * 7.0 * PI) + sin(v * 5.0 * PI) * 0.1;
+}
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let world = object.model * vec4<f32>(in.position, 1.0);
+    // Wind: vertices marked for it (custom.x sideways, custom.y up and
+    // down), or the whole object, sway around their place, and gusts push
+    // them along the wind's direction.
+    var local = in.position;
+    var pushed = vec3<f32>(0.0);
+    let sway_xy = max(in.custom.x * object.wind.y, object.wind.x);
+    let sway_z = max(in.custom.y * object.wind.y, object.wind.x);
+    if (max((in.custom.x + in.custom.y) * object.wind.y, object.wind.x) * object.wind.z > 0.0) {
+        let p = in.position;
+        let time = frame.wind.x;
+        let speed = frame.wind.y;
+        local += vec3<f32>(
+            sin((time + p.x * 10.0 + p.y + p.z) * (speed / 5.0)) * sway_xy,
+            sin((time + p.x + p.y * 10.0 + p.z) * (speed / 7.5)) * sway_xy,
+            sin((time + p.x + p.y + p.z * 10.0) * (speed / 10.0)) * sway_z,
+        ) * object.wind.z;
+        let direction = frame.wind.zw;
+        let along = dot(p.xy / 16.0, direction) / max(dot(direction, direction), 0.0001);
+        let gust = gust_noise((frame.wind_gusts.x - along / 3.0 - p.z / 64.0) * 0.075);
+        if (sway_xy > 0.0) {
+            pushed = vec3<f32>(direction * gust, 0.0) * object.wind.w;
+        }
+    }
+    var world = object.model * vec4<f32>(local, 1.0);
+    world = vec4<f32>(world.xyz + pushed, world.w);
     out.position = world.xyz;
     out.normal = normalize((object.model * vec4<f32>(in.normal, 0.0)).xyz);
     out.custom = in.custom;

@@ -54,6 +54,40 @@ pub enum Layer {
     SkyAdd,
 }
 
+/// How an object takes the wind.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ObjectWind {
+    /// The whole object sways (`wind` of a timeline).
+    pub whole: bool,
+    /// Its vertices that are marked for it sway: leaves, plants, liquids
+    /// (`wind_terrain`).
+    pub marked: bool,
+    /// How far it sways; 0 keeps it still.
+    pub strength: f32,
+    /// How far gusts push it along the wind's direction.
+    pub directional_strength: f32,
+}
+
+impl Default for ObjectWind {
+    /// Still.
+    fn default() -> Self {
+        Self { whole: false, marked: true, strength: 0.0, directional_strength: 0.0 }
+    }
+}
+
+/// The wind of a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Wind {
+    /// Time in sixtieths of a second (`background_time`).
+    pub time: f32,
+    /// How fast things sway; 0 without wind.
+    pub speed: f32,
+    /// Unit vector the gusts travel along, on the ground plane.
+    pub direction: [f32; 2],
+    /// How far the gusts have travelled.
+    pub gust_phase: f32,
+}
+
 /// One draw: a mesh with its transform and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderObject {
@@ -83,6 +117,7 @@ pub struct RenderObject {
     /// Part of the selection, which gets an outline.
     pub selected: bool,
     pub layer: Layer,
+    pub wind: ObjectWind,
 }
 
 impl RenderObject {
@@ -105,6 +140,7 @@ impl RenderObject {
             pick_only: false,
             selected: false,
             layer: Layer::World,
+            wind: ObjectWind::default(),
         }
     }
 }
@@ -143,6 +179,7 @@ pub struct RenderScene {
     pub lighting: Lighting,
     /// Colour the frame is cleared with.
     pub background: Rgb,
+    pub wind: Wind,
     pub fog: Fog,
     pub tonemapper: Tonemapper,
     pub exposure: f32,

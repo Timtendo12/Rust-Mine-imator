@@ -18,7 +18,7 @@ pub mod text;
 
 pub use animation::{sheet_frame, TextureAnimation, SHEET_FRAMES};
 pub use builder::{build_grid, Grid, GridBlock, GridSource};
-pub use blocks::{block_mesh, pick_weighted, BlockDef, Blocks, Depth, Dir, PlacedBlock, RandomOffset, RenderModel};
+pub use blocks::{block_mesh, pick_weighted, BlockDef, BlockWave, WaveAxis, Blocks, Depth, Dir, PlacedBlock, RandomOffset, RenderModel};
 pub use item::{item_mesh, ITEM_SIZE};
 pub use legacy::{LegacyBlock, LegacyBlocks};
 pub use model_file::{Bend, ModelError, ModelFile, ModelPart, ModelShape, ShapeKind};

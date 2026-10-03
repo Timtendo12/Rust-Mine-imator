@@ -228,7 +228,16 @@ pub(crate) fn liquid_mesh(
     }
     let cz = corner_z.map(|z| z + z1);
 
-    let mut em = Emitter { out, custom: [0.0, 0.0, emissive as f32, 0.0] };
+    // Liquids bob up and down; their bottom stays put unless there is
+    // more of the liquid below (`block_generate_liquid`).
+    let wave_from = if !s.animation {
+        f64::INFINITY
+    } else if matches[down] {
+        f64::NEG_INFINITY
+    } else {
+        z1
+    };
+    let mut em = Emitter { out, emissive: emissive as f32, wave_from };
     let flow = flow_texture.as_str();
 
     if !matches[e] && !solids[e] {
@@ -279,14 +288,17 @@ pub(crate) fn liquid_mesh(
 /// Adds triangles to the mesh of their texture.
 struct Emitter<'a> {
     out: &'a mut HashMap<String, MeshData>,
-    custom: [f32; 4],
+    emissive: f32,
+    /// Vertices above this height wave.
+    wave_from: f64,
 }
 
 impl Emitter<'_> {
     fn triangle(&mut self, texture: &str, ps: [[f64; 3]; 3], uvs: [[f64; 2]; 3]) {
         let uv = |c: [f64; 2]| [(c[0] / BLOCK) as f32, (c[1] / BLOCK) as f32];
         let mesh = self.out.entry(texture.to_owned()).or_default();
-        mesh.triangle_with(ps.map(|c| c.map(|v| v as f32)), uvs.map(uv), None, false, [self.custom; 3]);
+        let custom = ps.map(|c| [0.0, (c[2] > self.wave_from) as u8 as f32, self.emissive, 0.0]);
+        mesh.triangle_with(ps.map(|c| c.map(|v| v as f32)), uvs.map(uv), None, false, custom);
     }
 
     fn face(&mut self, texture: &str, ps: [[f64; 3]; 4], uvs: [[f64; 2]; 4]) {

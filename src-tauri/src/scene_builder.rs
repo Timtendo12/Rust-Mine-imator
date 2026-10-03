@@ -10,7 +10,7 @@ use mi_format::project::{Background, Template};
 use mi_mesh::MeshData;
 use mi_project::{ModelBindings, ModelTextures, Project, SceneryStore};
 use mi_render::camera::CLIP_NEAR;
-use mi_render::scene::{ColorTransform, Fog, Layer, PointLight, RenderObject, RenderScene, Tonemapper};
+use mi_render::scene::{ColorTransform, Fog, Layer, ObjectWind, PointLight, RenderObject, RenderScene, Tonemapper, Wind};
 use mi_render::{ground_mesh, shape_mesh, Camera, MeshId, Shape, ShapeSettings, SkySettings, TextureId, WorkCamera};
 
 /// Meshes and textures the scene needs. The caller keeps what it uploaded
@@ -652,9 +652,19 @@ pub fn build_scene(
             }
             found
         };
+        // Wind: leaves, plants and liquids sway, or the whole timeline if
+        // it is set to (`render_world_tl`).
+        let strength = if background.wind { (background.wind_strength * inherited.wind_influence) as f32 } else { 0.0 };
+        let wind = ObjectWind {
+            whole: timeline.wind,
+            marked: timeline.wind_terrain,
+            strength,
+            directional_strength: strength * background.wind_directional_strength as f32,
+        };
         for object in &mut objects[first_object..] {
             object.pick = order[node_index] as u32 + 1;
             object.selected = selected && !object.pick_only;
+            object.wind = wind;
         }
     }
 
@@ -665,6 +675,17 @@ pub fn build_scene(
     RenderScene {
         camera,
         background: backdrop_color,
+        wind: {
+            // The original counts time in sixtieths of a second.
+            let time = seconds * 60.0;
+            let angle = background.wind_direction.to_radians();
+            Wind {
+                time: time as f32,
+                speed: if background.wind { background.wind_speed as f32 } else { 0.0 },
+                direction: [angle.sin() as f32, angle.cos() as f32],
+                gust_phase: if background.wind { (background.wind_directional_speed * 0.1 * time) as f32 } else { 0.0 },
+            }
+        },
         fog: Fog {
             show: background.fog_show,
             color: object_fog,

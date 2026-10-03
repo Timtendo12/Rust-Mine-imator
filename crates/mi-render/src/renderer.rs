@@ -60,6 +60,10 @@ struct FrameUniform {
     fog_color: [f32; 4],
     fog: [f32; 4],
     tone: [f32; 4],
+    /// Time, speed, direction.
+    wind: [f32; 4],
+    /// Gust phase.
+    wind_gusts: [f32; 4],
     lights: [[f32; 4]; 128],
 }
 
@@ -76,6 +80,9 @@ struct ObjectUniform {
     mix_color: [f32; 4],
     material: [f32; 4],
     flags: [f32; 4],
+    /// Whole object sways, marked vertices sway, strength, directional
+    /// strength.
+    wind: [f32; 4],
 }
 
 impl ObjectUniform {
@@ -93,6 +100,12 @@ impl ObjectUniform {
             mix_color: colors.map_or([0.0; 4], |c| rgb(c.mix_color, c.mix_percent)),
             material: [object.metallic, object.roughness, object.emissive, colors.is_some() as u8 as f32],
             flags: [object.unlit as u8 as f32, object.sun_only as u8 as f32, object.fog as u8 as f32, object.pick as f32],
+            wind: [
+                object.wind.whole as u8 as f32,
+                object.wind.marked as u8 as f32,
+                object.wind.strength,
+                object.wind.directional_strength,
+            ],
         }
     }
 }
@@ -585,6 +598,8 @@ impl Renderer {
             fog_color: rgb(scene.fog.color, 1.0),
             fog: [scene.fog.show as u8 as f32, scene.fog.distance, scene.fog.size, scene.fog.height],
             tone: [tonemapper, scene.exposure, scene.gamma, (point_lights + 1) as f32],
+            wind: [scene.wind.time, scene.wind.speed, scene.wind.direction[0], scene.wind.direction[1]],
+            wind_gusts: [scene.wind.gust_phase, 0.0, 0.0, 0.0],
             lights,
         }
     }

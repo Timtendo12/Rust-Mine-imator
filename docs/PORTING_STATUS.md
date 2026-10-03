@@ -102,7 +102,7 @@ Legend: **done** · **partial** · **not started**
 |---|---|
 | wgpu device and surface under the transparent webview | done (one window; pop-out windows not yet) |
 | Low quality mode (flat, shaded): per-vertex sun and point lights, ambient, fog, tonemapping, colour transforms, alpha blending | done |
-| Wind, material maps, glint, alpha hashing, alpha-fix pass in the low quality shader | not started |
+| Wind, material maps, glint, alpha hashing, alpha-fix pass in the low quality shader | partial: wind (leaves, plants and liquids sway by the wind settings of the block definitions, whole timelines with their wind switch, gusts along the wind direction, scaled by the wind influence value). The foot rules of kelp and vines, wind in picking and in the selection outline, and the rest not yet |
 | Shapes (cube, cone, cylinder, sphere, surface) with texture mapping options | done (untextured until assets load) |
 | Sun direction, day/night and twilight colours | done |
 | Sky background image, sun and moon discs, stars, clouds | partial: the haze dome at the horizon, stars at night, the sun and the moon (phase, angle, scale) drawn additively, clouds in the normal, flat and faded modes drifting with the animation, the fog colour of `background_sky_update` and the twilight glow towards the rising or setting sun. Not yet: background images (flat, sphere, box), sun, moon and cloud textures of resources |
