@@ -211,6 +211,8 @@ pub struct RenderScene {
     /// Colour the frame is cleared with.
     pub background: Rgb,
     pub wind: Wind,
+    /// Effects of the camera, applied in the high quality mode.
+    pub post: crate::post::PostEffects,
     pub fog: Fog,
     pub tonemapper: Tonemapper,
     pub exposure: f32,

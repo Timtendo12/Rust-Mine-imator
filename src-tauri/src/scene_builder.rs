@@ -364,6 +364,59 @@ pub fn scene_camera(
     camera
 }
 
+/// The effects of the camera timeline a view looks through (`render_start`):
+/// none for the work camera.
+pub fn camera_effects(project: &Project, state: &mi_anim::SceneState, order: &[usize], view_camera: ViewCamera) -> mi_render::PostEffects {
+    use mi_render::post::{Bloom, ChromaticAberration, ColorCorrection, Distort, Grain, PostEffects, Vignette};
+    if !matches!(view_camera, ViewCamera::Active(_)) {
+        return PostEffects::default();
+    }
+    let Some(active) = project.active_camera(state, order) else { return PostEffects::default() };
+    let node = order.iter().position(|&i| i == active).expect("the active camera is part of the scene");
+    let values = &state.nodes[node].values;
+    let number = |id| values.number(id) as f32;
+    let color = |id: ValueId| rgb(values[id].as_color().unwrap_or(Color::WHITE));
+    PostEffects {
+        bloom: values.flag(ValueId::CamBloom).then(|| Bloom {
+            threshold: number(ValueId::CamBloomThreshold),
+            radius: number(ValueId::CamBloomRadius),
+            intensity: number(ValueId::CamBloomIntensity),
+            ratio: number(ValueId::CamBloomRatio),
+            blend: color(ValueId::CamBloomBlend),
+            blade_amount: number(ValueId::CamBladeAmount),
+            blade_angle: number(ValueId::CamBladeAngle),
+        }),
+        chromatic_aberration: values.flag(ValueId::CamCa).then(|| ChromaticAberration {
+            blur_amount: number(ValueId::CamCaBlurAmount),
+            offsets: [number(ValueId::CamCaRedOffset), number(ValueId::CamCaGreenOffset), number(ValueId::CamCaBlueOffset)],
+            distort_channels: values.flag(ValueId::CamCaDistortChannels),
+        }),
+        distort: values.flag(ValueId::CamDistort).then(|| Distort {
+            amount: number(ValueId::CamDistortAmount),
+            repeat: values.flag(ValueId::CamDistortRepeat),
+            zoom: number(ValueId::CamDistortZoomAmount),
+        }),
+        color_correction: values.flag(ValueId::CamColorCorrection).then(|| ColorCorrection {
+            contrast: number(ValueId::CamContrast),
+            brightness: number(ValueId::CamBrightness),
+            saturation: number(ValueId::CamSaturation),
+            vibrance: number(ValueId::CamVibrance),
+            color_burn: color(ValueId::CamColorBurn),
+        }),
+        grain: values.flag(ValueId::CamGrain).then(|| Grain {
+            strength: number(ValueId::CamGrainStrength),
+            saturation: number(ValueId::CamGrainSaturation),
+            size: number(ValueId::CamGrainSize),
+        }),
+        vignette: values.flag(ValueId::CamVignette).then(|| Vignette {
+            radius: number(ValueId::CamVignetteRadius),
+            softness: number(ValueId::CamVignetteSoftness),
+            strength: number(ValueId::CamVignetteStrength),
+            color: color(ValueId::CamVignetteColor),
+        }),
+    }
+}
+
 /// Builds the scene of `project` at frame `marker`.
 ///
 /// Drawn so far: shapes, blocks, body parts of characters and special
@@ -761,6 +814,7 @@ pub fn build_scene(
     RenderScene {
         camera,
         background: backdrop_color,
+        post: camera_effects(project, &state, &order, view_camera),
         wind: {
             // The original counts time in sixtieths of a second.
             let time = seconds * 60.0;

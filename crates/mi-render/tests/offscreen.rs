@@ -42,6 +42,7 @@ fn scene(objects: Vec<RenderObject>) -> RenderScene {
         lighting: SkySettings { sky_time: 0.0, ..Default::default() }.lighting(),
         background: SkySettings::default().sky_color,
         wind: Default::default(),
+        post: Default::default(),
         fog: Fog { show: false, color: [1.0; 3], distance: 1000.0, size: 100.0, height: 1000.0 },
         tonemapper: Tonemapper::None,
         exposure: 1.0,
@@ -510,4 +511,86 @@ fn high_quality_lights_shine_in_their_range_and_cone_and_cast_shadows() {
     assert!(ring > shaded + 150, "ring {ring}, shaded {shaded}");
     s.lights[0].shadows = false;
     assert!(shot(&mut renderer, &s, under) > shaded + 150);
+}
+
+#[test]
+fn camera_effects_change_the_finished_picture() {
+    use mi_render::post::{Bloom, ChromaticAberration, ColorCorrection, Distort, Grain, Vignette};
+    use mi_render::{HighSettings, PostEffects};
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+    let target = OffscreenTarget::new(&gpu.device, &gpu.queue, &renderer, SIZE, SIZE);
+    let settings = HighSettings { samples: 1, shadows: false, antialiasing: false, ..Default::default() };
+    // A white, unlit cube in front of a dull backdrop (the sky itself is
+    // bright enough to bloom).
+    const SKY: [u8; 4] = [51, 77, 102, 255];
+    let mut base = scene(vec![flat(cube, translation(0.0, 0.0, 0.0), [1.0, 1.0, 1.0, 1.0])]);
+    base.background = [0.2, 0.3, 0.4];
+    let mut shot = |post: PostEffects| {
+        let mut s = base.clone();
+        s.post = post;
+        while renderer.render_high(&target.color, target.viewport(), &s, &settings) {}
+        target.read_rgba().unwrap()
+    };
+    let plain = shot(PostEffects::default());
+    assert_eq!(centre(&plain), [255, 255, 255, 255]);
+    assert!((0..3).all(|i| (pixel(&plain, 2, 2)[i] as i32 - SKY[i] as i32).abs() <= 1));
+    let near = |a: [u8; 4], b: [u8; 4]| (0..3).all(|i| (a[i] as i32 - b[i] as i32).abs() <= 2);
+
+    // Vignette: the corners turn to its colour, the middle stays.
+    let vignette = Vignette { radius: 0.6, softness: 0.3, strength: 1.0, color: [0.0, 0.0, 0.0] };
+    let image = shot(PostEffects { vignette: Some(vignette), ..Default::default() });
+    assert!(brightness(pixel(&image, 1, 1)) < brightness(SKY) / 2);
+    assert_eq!(centre(&image), [255, 255, 255, 255]);
+
+    // Colour correction: without saturation the sky is grey; brightness
+    // lifts it.
+    let neutral = ColorCorrection { contrast: 0.0, brightness: 0.0, saturation: 1.0, vibrance: 0.0, color_burn: [1.0; 3] };
+    let image = shot(PostEffects { color_correction: Some(neutral), ..Default::default() });
+    assert!(near(pixel(&image, 2, 2), SKY), "{:?}", pixel(&image, 2, 2));
+    let grey = shot(PostEffects { color_correction: Some(ColorCorrection { saturation: 0.0, ..neutral }), ..Default::default() });
+    let sky = pixel(&grey, 2, 2);
+    assert!(sky[0] == sky[1] && sky[1] == sky[2], "{sky:?}");
+    let bright = shot(PostEffects { color_correction: Some(ColorCorrection { brightness: 0.2, ..neutral }), ..Default::default() });
+    assert!(brightness(pixel(&bright, 2, 2)) > brightness(SKY) + 100);
+
+    // Bloom: the white cube glows into the sky next to it, not far away.
+    let bloom = Bloom { threshold: 0.9, radius: 1.0, intensity: 1.0, ratio: 0.0, blend: [1.0; 3], blade_amount: 0.0, blade_angle: 0.0 };
+    let image = shot(PostEffects { bloom: Some(bloom), ..Default::default() });
+    let edge = (0..SIZE / 2).rev().find(|&x| near(pixel(&plain, x, SIZE / 2), SKY)).unwrap();
+    assert!(brightness(pixel(&image, edge - 1, SIZE / 2)) > brightness(SKY) + 20, "{:?}", pixel(&image, edge - 1, SIZE / 2));
+    assert!(near(pixel(&image, 1, 1), SKY));
+    // Streaks reach further along their direction than across it.
+    let streaks = shot(PostEffects { bloom: Some(Bloom { ratio: 1.0, blade_amount: 2.0, radius: 2.0, ..bloom }), ..Default::default() });
+    let top = (0..SIZE / 2).rev().find(|&y| near(pixel(&plain, SIZE / 2, y), SKY)).unwrap();
+    let sideways = brightness(pixel(&streaks, edge - 1, SIZE / 2));
+    let upwards = brightness(pixel(&streaks, SIZE / 2, top - 1));
+    assert!(sideways > upwards + 10, "{sideways} {upwards}");
+
+    // Distortion moves the cube's edge; zooming out leaves black borders.
+    let distort = Distort { amount: 0.0, repeat: false, zoom: 0.5 };
+    let image = shot(PostEffects { distort: Some(distort), ..Default::default() });
+    assert_eq!(pixel(&image, 2, 2)[..3], [0, 0, 0]);
+    assert_eq!(centre(&image), [255, 255, 255, 255]);
+    let repeated = shot(PostEffects { distort: Some(Distort { repeat: true, ..distort }), ..Default::default() });
+    assert!(brightness(pixel(&repeated, 2, 2)) > 100);
+
+    // Chromatic aberration fringes the cube's edge with colour.
+    let ca = ChromaticAberration { blur_amount: 0.0, offsets: [0.3, 0.0, -0.3], distort_channels: false };
+    let image = shot(PostEffects { chromatic_aberration: Some(ca), ..Default::default() });
+    let fringed = (0..SIZE).any(|x| {
+        let p = pixel(&image, x, SIZE / 2);
+        !near(p, SKY) && !near(p, [255, 255, 255, 255])
+    });
+    assert!(fringed);
+    assert!(near(centre(&image), [255, 255, 255, 255]));
+
+    // Grain makes neighbouring pixels of the sky differ.
+    let grain = Grain { strength: 0.3, saturation: 0.0, size: 1.0 };
+    let image = shot(PostEffects { grain: Some(grain), ..Default::default() });
+    let mut values = std::collections::HashSet::new();
+    for x in 0..20 {
+        values.insert(pixel(&image, x, 3));
+    }
+    assert!(values.len() > 5, "{}", values.len());
 }

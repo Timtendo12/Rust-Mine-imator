@@ -9,6 +9,7 @@
 //! `docs/PORTING_STATUS.md` for what is missing.
 
 use crate::camera::Camera;
+use crate::post::{Post, POST_FORMAT, POST_TEXTURES};
 use crate::renderer::{FrameUniform, Renderer, Viewport, DEPTH_FORMAT};
 use crate::scene::{Layer, PointLight, RenderObject, RenderScene};
 use bytemuck::{Pod, Zeroable};
@@ -256,6 +257,8 @@ struct Target {
     depth: wgpu::TextureView,
     /// Two textures that take turns holding the average.
     gathered: [wgpu::TextureView; 2],
+    /// Pictures the effects of the camera work in.
+    post: [wgpu::TextureView; POST_TEXTURES],
     /// Samples gathered so far.
     count: u32,
     /// What the samples are of; a change starts over.
@@ -271,6 +274,9 @@ pub(crate) struct High {
     pipeline_shadow: wgpu::RenderPipeline,
     pipeline_gather: wgpu::RenderPipeline,
     pipeline_show: wgpu::RenderPipeline,
+    /// Brings the average into the format the effects work in.
+    pipeline_import: wgpu::RenderPipeline,
+    post: Post,
     shadow_layout: wgpu::BindGroupLayout,
     resolve_layout: wgpu::BindGroupLayout,
     shadow_buffer: wgpu::Buffer,
@@ -542,6 +548,7 @@ impl High {
         };
         let pipeline_gather = fullscreen("gather samples", "fs_gather", GATHER_FORMAT);
         let pipeline_show = fullscreen("show samples", "fs_show", renderer.target_format);
+        let pipeline_import = fullscreen("import samples", "fs_show", POST_FORMAT);
 
         let shadow_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shadow uniforms"),
@@ -587,6 +594,8 @@ impl High {
             pipeline_shadow,
             pipeline_gather,
             pipeline_show,
+            pipeline_import,
+            post: Post::new(renderer),
             shadow_layout,
             resolve_layout,
             shadow_buffer,
@@ -683,6 +692,7 @@ impl High {
             sample: texture("sample", SAMPLE_FORMAT),
             depth: renderer.create_depth_view(width, height),
             gathered: [texture("gathered samples", GATHER_FORMAT), texture("gathered samples", GATHER_FORMAT)],
+            post: std::array::from_fn(|_| texture("post effects", POST_FORMAT)),
             count: 0,
             scene: None,
         };
@@ -747,16 +757,23 @@ impl Renderer {
             high.targets[index].count += 1;
         }
 
-        // Show the average.
-        let target = &high.targets[index];
-        let shown = &target.gathered[(target.count % 2) as usize];
-        let uniform = ResolveUniform { params: [0.0, viewport.x as f32, viewport.y as f32, 0.0] };
-        let bind = self.resolve_bind(&high, &uniform, shown, &target.sample);
+        // Show the average, through the effects of the camera if it has any.
+        let shown_index = (high.targets[index].count % 2) as usize;
+        let with_effects = scene.post.any();
         {
+            let target = &high.targets[index];
+            let shown = &target.gathered[shown_index];
+            let (to, offset, pipeline) = if with_effects {
+                (&target.post[0], [0.0, 0.0], &high.pipeline_import)
+            } else {
+                (color, [viewport.x as f32, viewport.y as f32], &high.pipeline_show)
+            };
+            let uniform = ResolveUniform { params: [0.0, offset[0], offset[1], 0.0] };
+            let bind = self.resolve_bind(&high, &uniform, shown, &target.sample);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("show samples"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color,
+                    view: to,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
@@ -765,11 +782,21 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_viewport(viewport.x as f32, viewport.y as f32, width as f32, height as f32, 0.0, 1.0);
-            pass.set_scissor_rect(viewport.x, viewport.y, width, height);
-            pass.set_pipeline(&high.pipeline_show);
+            if !with_effects {
+                pass.set_viewport(viewport.x as f32, viewport.y as f32, width as f32, height as f32, 0.0, 1.0);
+                pass.set_scissor_rect(viewport.x, viewport.y, width, height);
+            }
+            pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &bind, &[]);
             pass.draw(0..3, 0..1);
+        }
+        if with_effects {
+            let High { post, targets, .. } = &mut high;
+            let textures = &targets[index].post;
+            // The grain changes with the animation's time.
+            let seed = scene.wind.time as u32;
+            let result = post.apply(self, &mut encoder, textures, (width, height), &scene.post, seed);
+            post.present(self, &mut encoder, &textures[result], color, viewport);
         }
 
         if drawable.iter().any(|o| o.selected) {

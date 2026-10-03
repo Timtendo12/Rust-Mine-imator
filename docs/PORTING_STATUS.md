@@ -121,7 +121,7 @@ Legend: **done** · **partial** · **not started**
 | Camera shake | done |
 | Offscreen rendering with pixel readback | done (used by tests, thumbnails and export) |
 | High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | partial: the "Render" view mode and high quality exports gather the project's number of samples, each shifted within the pixel (smooth edges) and with the sun moved within its disc (soft shadows); sun shadows in three cascades as in `render_update_cascades`; point lights with their range fade and spot lights with their cone, both with shadows softened by the light's size (up to 4 point and 8 spot lights cast shadows at once, further ones shine without; the original has no limit); lighting per pixel with GGX highlights; timelines can be set not to cast shadows. Drawn in one pass per sample instead of composited from separate surfaces. Not yet: SSAO, indirect light, reflections, subsurface scattering, glint, transparent shadows |
-| Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | not started |
+| Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | partial: in the high quality mode, through a camera timeline: bloom (round and streaks along the aperture blades), chromatic aberration, distortion, colour correction, film grain and vignette, in the original's order. Not yet: depth of field, glow, lens dirt, the overlay; effects in the low quality modes |
 | Tonemapping, alpha modes, material formats | not started |
 | Debug render passes | not started |
 
