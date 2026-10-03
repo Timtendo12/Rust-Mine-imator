@@ -240,6 +240,62 @@ impl Project {
         id
     }
 
+    /// The templates whose model the given timelines show: their own, or
+    /// that of the model a body part belongs to.
+    fn model_templates(&self, timelines: &[SaveId]) -> Vec<SaveId> {
+        let mut templates = Vec::new();
+        for id in timelines {
+            let Some(timeline) = self.timeline(id) else { continue };
+            let Some(template) = timeline.temp.as_id().and_then(|t| self.template(t)) else { continue };
+            let has_model = matches!(template.kind, TempType::Character | TempType::SpecialBlock | TempType::Bodypart);
+            if has_model && !templates.contains(&template.id) {
+                templates.push(template.id.clone());
+            }
+        }
+        templates
+    }
+
+    /// The skin of the model a timeline shows: `None` if it shows no model,
+    /// `Some(None)` for the texture of the Minecraft assets, else the file
+    /// name of the skin.
+    pub fn model_skin(&self, timeline: &SaveId) -> Option<Option<String>> {
+        let template = self.model_templates(std::slice::from_ref(timeline)).into_iter().next()?;
+        let texture = &self.template(&template)?.model_tex;
+        Some(texture.as_id().and_then(|id| self.resource(id)).map(|resource| resource.filename.clone()))
+    }
+
+    /// Gives the models of timelines the image `source` as their skin, or
+    /// the texture of the Minecraft assets again for `None`
+    /// (`action_lib_model_tex`). `player_skin` says whether the model of a
+    /// template uses the player skin layout. Returns whether anything
+    /// showed a model.
+    pub fn set_model_skin(
+        &mut self,
+        timelines: &[SaveId],
+        source: Option<&std::path::Path>,
+        player_skin: &dyn Fn(&Template) -> bool,
+    ) -> bool {
+        let templates = self.model_templates(timelines);
+        if templates.is_empty() {
+            return false;
+        }
+        self.edit("Change skin", None, |edit| {
+            for id in &templates {
+                let texture = match source {
+                    Some(source) => {
+                        let layout = edit.project().template(id).is_some_and(player_skin);
+                        ObjRef::Id(Self::add_resource(edit, source, ResType::Skin, |r| r.player_skin = layout))
+                    }
+                    None => ObjRef::default_resource(),
+                };
+                if let Some(template) = edit.template(id) {
+                    template.model_tex = texture;
+                }
+            }
+        });
+        true
+    }
+
     /// Adds scenery from a schematic or structure file
     /// (`action_bench_scenery`, `action_bench_create`). All of its blocks
     /// are part of the scenery; chests, doors and the like do not get

@@ -15,8 +15,13 @@ use std::sync::Arc;
 pub enum ModelTextures {
     /// The textures of the asset pack.
     Pack,
-    /// One image for every texture name: a player skin or texture file.
-    Image(PathBuf),
+    /// One image for every texture name: a skin or texture file.
+    Image {
+        path: PathBuf,
+        /// It is a player skin, which may be in the layout from before
+        /// Minecraft 1.8 (see `mi_assets::player_skin`).
+        player_skin: bool,
+    },
 }
 
 /// The model part a timeline draws.
@@ -89,8 +94,8 @@ impl ModelBindings {
 
             let textures = match texture_ref.as_id().and_then(|id| project.resource(id)) {
                 Some(res) if matches!(res.kind, ResType::Skin | ResType::DownloadedSkin | ResType::Texture) => {
-                    match project.folder() {
-                        Some(folder) => ModelTextures::Image(folder.join(&res.filename)),
+                    match project.resource_path(res) {
+                        Some(path) => ModelTextures::Image { path, player_skin: res.player_skin },
                         None => ModelTextures::Pack,
                     }
                 }
@@ -98,7 +103,7 @@ impl ModelBindings {
             };
             let model_key = match &textures {
                 ModelTextures::Pack => model_key,
-                ModelTextures::Image(path) => format!("{model_key}|{}", path.display()),
+                ModelTextures::Image { path, .. } => format!("{model_key}|{}", path.display()),
             };
             parts.insert(index, PartBinding { model, part_name, textures, model_key });
         }

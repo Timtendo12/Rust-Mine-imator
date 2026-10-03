@@ -89,3 +89,48 @@ fn creating_scenery_and_text_is_one_undo_step_each() {
     assert_eq!(project.resource_path(&resource).unwrap(), dir.join("a.nbt"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn skins_are_set_on_the_model_of_a_timeline_or_its_parts() {
+    use mi_core::{ObjRef, SaveId};
+    use mi_format::project::{ProjectFile, Template, Timeline};
+
+    let dir = temp_dir("skin");
+    std::fs::write(dir.join("hero.png"), b"png").unwrap();
+    let mut file = ProjectFile::new(0.0, 1.0);
+    let mut template = Template::new(SaveId::new("STEVE_T"), TempType::Character);
+    template.model_name = "human".into();
+    file.objects.templates.push(template);
+    file.objects.templates.push(Template::new(SaveId::new("CUBE_T"), TempType::Cube));
+    let mut add = |id: &str, kind: TlType, temp: &str| {
+        let mut timeline = Timeline::new(SaveId::new(id), kind, &file.defaults);
+        timeline.temp = ObjRef::id(temp);
+        file.objects.timelines.push(timeline);
+    };
+    add("STEVE", TlType::Character, "STEVE_T");
+    add("ARM", TlType::Bodypart, "STEVE_T");
+    add("CUBE", TlType::Cube, "CUBE_T");
+    let mut project = Project::from_file(file, mi_core::IdGenerator::new(1)).0;
+
+    // A cube shows no model.
+    assert_eq!(project.model_skin(&SaveId::new("CUBE")), None);
+    assert!(!project.set_model_skin(&[SaveId::new("CUBE")], Some(&dir.join("hero.png")), &|_| true));
+    assert_eq!(project.model_skin(&SaveId::new("STEVE")), Some(None));
+
+    // Through a body part the skin of the whole character changes.
+    assert!(project.set_model_skin(&[SaveId::new("ARM")], Some(&dir.join("hero.png")), &|t| t.model_name == "human"));
+    assert_eq!(project.model_skin(&SaveId::new("STEVE")), Some(Some("hero.png".into())));
+    let skin = project.resources()[0].clone();
+    assert_eq!((skin.kind, skin.player_skin), (ResType::Skin, true));
+    assert_eq!(project.resource_path(&skin).unwrap(), dir.join("hero.png"));
+
+    // Back to the texture of the assets, and undo.
+    assert!(project.set_model_skin(&[SaveId::new("STEVE")], None, &|_| true));
+    assert_eq!(project.model_skin(&SaveId::new("ARM")), Some(None));
+    project.undo();
+    assert_eq!(project.model_skin(&SaveId::new("ARM")), Some(Some("hero.png".into())));
+    project.undo();
+    assert_eq!(project.model_skin(&SaveId::new("ARM")), Some(None));
+    assert!(project.resources().is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -12,6 +12,7 @@ pub mod nbt;
 pub mod pack;
 pub mod scenery;
 pub mod shape_mesh;
+pub mod skin;
 pub mod sky;
 pub mod text;
 
@@ -25,4 +26,5 @@ pub use pack::{decode_square, AssetPack, ModelDef, PackError, ResolvedModel, Rgb
 pub use scenery::{Scenery, SceneryBlock, SceneryError, SceneryOptions};
 pub use text::{text_image, text_mesh, Align, SpriteFont, TextImage};
 pub use shape_mesh::{shape_mesh, BendStyle};
+pub use skin::player_skin;
 pub use sky::{cloud_positions, clouds_mesh, moon_phase, CloudMode};

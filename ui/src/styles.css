@@ -1209,3 +1209,21 @@ input.swatch-color {
   display: flex;
   justify-content: space-between;
 }
+
+.skin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skin-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skin-row button {
+  padding: 2px 8px;
+}

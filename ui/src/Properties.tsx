@@ -233,6 +233,8 @@ interface Props {
   /** Settings of the selected timeline that are not animated. */
   timelineSettings: TimelineSettings | null;
   onSetTimelineSetting: (group: TimelineSettingGroup, key: string, value: unknown) => void;
+  /** Picks a skin for the selected characters (true), or restores the default one (false). */
+  onChangeSkin: (browse: boolean) => void;
   onEditValues: (values: ValueEdit[], mode: "set" | "add", merge: string | null) => void;
   onEditDone: () => void;
 }
@@ -240,7 +242,7 @@ interface Props {
 /** The properties panel on the right. */
 export function Properties(props: Props) {
   const { project, frame, selected, settings, values, onEditValues, onEditDone, onSetSetting, onSetInfo } = props;
-  const { timelineSettings, onSetTimelineSetting } = props;
+  const { timelineSettings, onSetTimelineSetting, onChangeSkin } = props;
   const [open, setOpen] = useState<Record<string, boolean>>({ project: true, selection: true });
   const toggle = (key: string) => setOpen((current) => ({ ...current, [key]: !current[key] }));
   // Which groups of the frame editor are open; kept while values refresh.
@@ -399,6 +401,21 @@ export function Properties(props: Props) {
             <>
               <Field label="Name">{timeline.name || "(unnamed)"}</Field>
               <Field label="Type">{timeline.kind}</Field>
+              {timelineSettings?.skin && (
+                <Field label="Skin">
+                  <span className="skin-row">
+                    <span className="skin-name">{timelineSettings.skin.file ?? "Default"}</span>
+                    <button className="secondary" onClick={() => onChangeSkin(true)}>
+                      Browse…
+                    </button>
+                    {timelineSettings.skin.file && (
+                      <button className="secondary" onClick={() => onChangeSkin(false)} title="Use the texture of the Minecraft assets">
+                        Default
+                      </button>
+                    )}
+                  </span>
+                </Field>
+              )}
               <Field label="Position in the world">{formatVec(state.worldPosition)}</Field>
               <Field label="Visible in the scene">
                 {state.visible ? "Yes" : "No"}

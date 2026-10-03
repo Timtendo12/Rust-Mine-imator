@@ -355,11 +355,17 @@ export const createItem = (name: string) => invoke<Edited & { created: string[] 
 /** Adds scenery from a schematic, structure or .blocks file. */
 export const createScenery = (path: string) => invoke<Edited & { created: string[] }>("create_scenery", { path });
 
+/** Gives the models of timelines an image as their skin, or (null) the texture of the Minecraft assets. */
+export const setModelSkin = (timelines: string[], path: string | null) =>
+  invoke<Edited>("set_model_skin", { timelines, path });
+
 /** Adds a text object. */
 export const createText = () => invoke<Edited & { created: string[] }>("create_text");
 
 /** Settings of a timeline that are not animated, by their keys in project files. */
 export interface TimelineSettings {
+  /** For timelines that show a model: its skin file, or null for the texture of the Minecraft assets. */
+  skin: { file: string | null } | null;
   /** What it takes over from its parent; null for types without a place in the hierarchy. */
   inherit: Record<string, unknown> | null;
   appearance: Record<string, unknown> | null;

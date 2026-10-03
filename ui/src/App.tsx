@@ -33,6 +33,7 @@ import {
   renameTimeline,
   reparentTimelines,
   saveProject,
+  setModelSkin,
   setProjectInfo,
   setRegion,
   setSelection,
@@ -324,6 +325,21 @@ export function App() {
     });
     if (typeof path === "string") await create(() => createScenery(path));
   }, [create]);
+
+  /** Asks for an image and makes it the skin of the selected characters; `false` restores the default. */
+  const changeSkin = useCallback(
+    async (browse: boolean) => {
+      if (selection.length === 0) return;
+      let path: string | null = null;
+      if (browse) {
+        const picked = await open({ multiple: false, filters: [{ name: "Skin image", extensions: ["png"] }] });
+        if (typeof picked !== "string") return;
+        path = picked;
+      }
+      await run(() => setModelSkin(selection, path));
+    },
+    [run, selection],
+  );
 
   const duplicate = useCallback(async () => {
     if (selection.length === 0) return;
@@ -624,6 +640,7 @@ export function App() {
           settings={settings}
           values={values}
           timelineSettings={tlSettings}
+          onChangeSkin={(browse) => void changeSkin(browse)}
           onSetTimelineSetting={(group, key, value) =>
             selection.length > 0 && void run(() => setTimelineSetting(selection, group, key, value))
           }

@@ -490,9 +490,16 @@ pub fn build_scene(
                         binding.model.shape_texture(&part.name, &shape.description, shape.texture_name.as_deref());
                     object.texture = match &binding.textures {
                         ModelTextures::Pack => pack_texture(resources, inputs.pack, &texture_name),
-                        ModelTextures::Image(path) => resources.texture(format!("file:{}", path.display()), &|| {
-                            std::fs::read(path).ok().and_then(|bytes| mi_assets::decode_square(&bytes))
-                        }),
+                        ModelTextures::Image { path, player_skin } => {
+                            resources.texture(format!("file:{}:{player_skin}", path.display()), &|| {
+                                let bytes = std::fs::read(path).ok()?;
+                                if *player_skin {
+                                    mi_assets::player_skin(&bytes)
+                                } else {
+                                    mi_assets::decode_square(&bytes)
+                                }
+                            })
+                        }
                     };
                     apply_material(&mut object, inherited, shape.color.blend, shape.color.alpha);
                     object.emissive = object.emissive.max(shape.color.emissive as f32);

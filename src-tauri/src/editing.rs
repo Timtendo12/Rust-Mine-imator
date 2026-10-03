@@ -578,10 +578,44 @@ pub fn create_text(state: State<'_, AppState>) -> Result<Created, CommandError> 
     Ok(Created { edited, created: vec![id.to_string()] })
 }
 
+#[derive(Debug, Serialize)]
+pub struct SkinInfo {
+    file: Option<String>,
+}
+
+/// Gives the characters among `timelines` (or the characters their parts
+/// belong to) the image at `path` as their skin; without a path they get
+/// the texture of the Minecraft assets back.
+#[tauri::command]
+pub fn set_model_skin(timelines: Vec<String>, path: Option<String>, state: State<'_, AppState>) -> Result<Edited, CommandError> {
+    let pack = state.pack().ok_or_else(|| CommandError::Invalid("the Minecraft assets are not loaded".into()))?;
+    if let Some(path) = &path {
+        // Check that it is an image before anything refers to it.
+        let bytes = std::fs::read(path).map_err(|e| CommandError::Invalid(format!("{path}: {e}")))?;
+        if mi_assets::decode_square(&bytes).is_none() {
+            return Err(CommandError::Invalid(format!("{path} is not an image that can be used as a skin")));
+        }
+    }
+    let uses_player_layout = |template: &mi_format::project::Template| {
+        pack.resolve(&template.model_name, &template.model_state).is_some_and(|model| model.file.player_skin)
+    };
+    let (found, edited) =
+        change(&state, |p| p.set_model_skin(&ids(&timelines), path.as_deref().map(Path::new), &uses_player_layout))?;
+    if !found {
+        return Err(CommandError::Invalid("the selection shows no model that has a skin".into()));
+    }
+    state.refresh_project_assets();
+    state.redraw();
+    Ok(edited)
+}
+
 /// Settings of a timeline that are not animated, as project files store
 /// them. Groups a timeline's type has no use for are absent.
 #[derive(Debug, Serialize)]
 pub struct TimelineSettings {
+    /// For timelines that show a model: the file of its skin, or null for
+    /// the texture of the Minecraft assets.
+    skin: Option<SkinInfo>,
     inherit: Option<serde_json::Value>,
     appearance: Option<serde_json::Value>,
     flags: serde_json::Value,
@@ -596,6 +630,7 @@ pub fn timeline_settings(id: String, state: State<'_, AppState>) -> Result<Optio
     let types = timeline.kind.value_types(false);
     let object = |map| frontend_json(&mi_format::json::Json::Object(map));
     Ok(Some(TimelineSettings {
+        skin: project.model_skin(&timeline.id).map(|file| SkinInfo { file }),
         inherit: types.has(ValueType::Hierarchy).then(|| object(timeline.inherit.fields_json())),
         appearance: types.has(ValueType::Appearance).then(|| object(timeline.appearance.fields_json())),
         flags: serde_json::json!({
