@@ -9,6 +9,8 @@ hold, on purpose or for now.
 | Area | Difference | Why | Migration |
 |---|---|---|---|
 | Licence key / trial | Removed. All features are available; the watermark is an ordinary export option. | Decided for the rewrite. | None. `key.midata` is ignored. |
+| Backups | A backup is only written when the project changed since the last save or backup; the original writes one every interval regardless. | Identical backups pushed the useful older ones out of the five that are kept. | None; the files have the same names and format. |
+| Opened backups | A backup opens as an unsaved copy of the project in its folder: saving asks for a file. The original saves over the backup file. | A backup file is rotated away by later backups, so work saved into it would be lost. | Use Save as. |
 | Video encoding | Done by an `ffmpeg` executable run as a child process instead of FFmpeg linked into the program. | Avoids building FFmpeg and x264 from source on every platform. | `ffmpeg` must be installed for video export: the one named by the `MI_FFMPEG` environment variable, one next to the program, or one on the search path is used. Image sequences need nothing. Same containers and codecs (H.264 in mp4 and mov, MS MPEG-4 v3 in wmv), bit rate and key frame distance. Odd video sizes are padded by a pixel instead of failing in the encoder. |
 | User interface | HTML instead of the custom immediate-mode UI. Layout and workflows are kept; pixel-exact appearance is not a goal. | Target architecture. | None. |
 | JSON reading | Raw control characters inside strings and a UTF-8 byte order mark are accepted. | Files in the wild contain them. | None. |

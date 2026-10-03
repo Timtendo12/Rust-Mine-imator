@@ -35,6 +35,11 @@ pub enum ProjectError {
 #[derive(Debug, Clone)]
 pub struct Project {
     path: Option<PathBuf>,
+    /// Where the project's resources are; also set for an opened backup,
+    /// which has no file of its own to save to.
+    folder: Option<PathBuf>,
+    /// Changed since the last save or backup.
+    pub(crate) unsaved_backup: bool,
     pub(crate) file: ProjectFile,
     tree: Tree,
     timeline_index: HashMap<SaveId, usize>,
@@ -61,6 +66,13 @@ impl Default for ProjectContext {
     fn default() -> Self {
         Self { ground_slot: 0.0 }
     }
+}
+
+/// `path` with `suffix` added to its file name.
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
 }
 
 /// File name without folder and extension.
@@ -91,6 +103,8 @@ impl Project {
         let (tree, warnings) = Tree::build(&file.objects.timelines);
         let mut project = Self {
             path: None,
+            folder: None,
+            unsaved_backup: false,
             file,
             tree,
             timeline_index: HashMap::new(),
@@ -139,6 +153,7 @@ impl Project {
 
         // Backups open as the project they belong to but are not saved over.
         project.path = (extension == "miproject").then(|| path.to_owned());
+        project.folder = path.parent().map(Path::to_owned);
         if project.file.info.name.is_empty() {
             project.file.info.name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_owned();
         }
@@ -180,8 +195,51 @@ impl Project {
         // From now on the copies next to the project are the resources.
         self.resource_sources.clear();
         self.path = Some(path.to_owned());
+        self.folder = path.parent().map(Path::to_owned);
         self.changed = false;
+        self.unsaved_backup = false;
         Ok(())
+    }
+
+    /// The newest backup of the project (`action_toolbar_open_last_backup`),
+    /// if there is one. Backups are named after the project's folder.
+    pub fn last_backup(&self) -> Option<PathBuf> {
+        let base = self.backup_base()?;
+        [".backup1", ".backup"].iter().map(|suffix| with_suffix(&base, suffix)).find(|path| path.is_file())
+    }
+
+    /// `<folder>/<folder name>`, which `.backupN` is appended to.
+    fn backup_base(&self) -> Option<PathBuf> {
+        // A project that was never saved has nowhere to keep backups.
+        self.path.as_ref()?;
+        let folder = self.folder.as_ref()?;
+        Some(folder.join(folder.file_name()?))
+    }
+
+    /// Writes a backup of the project next to it (`project_backup`), keeping
+    /// `amount` of them: `.backup1` is the newest, older ones move up a
+    /// number and the oldest is dropped. Returns the file written, or `None`
+    /// when there was nothing to back up: the project has no file yet, or
+    /// nothing changed since the last save or backup.
+    pub fn backup(&mut self, amount: usize) -> Result<Option<PathBuf>, ProjectError> {
+        if !self.unsaved_backup {
+            return Ok(None);
+        }
+        let Some(base) = self.backup_base() else { return Ok(None) };
+        for number in (1..amount).rev() {
+            let from = with_suffix(&base, &format!(".backup{number}"));
+            if from.is_file() {
+                let to = with_suffix(&base, &format!(".backup{}", number + 1));
+                // Renaming fails on some systems when the target exists.
+                let _ = std::fs::remove_file(&to);
+                std::fs::rename(&from, &to).map_err(|source| ProjectError::Write { path: to.clone(), source })?;
+            }
+        }
+        let path = with_suffix(&base, if amount > 1 { ".backup1" } else { ".backup" });
+        self.sync_tree_indices();
+        std::fs::write(&path, self.file.save()).map_err(|source| ProjectError::Write { path: path.clone(), source })?;
+        self.unsaved_backup = false;
+        Ok(Some(path))
     }
 
     /// Where the file of a resource is: where it was added from, or else
@@ -213,7 +271,7 @@ impl Project {
 
     /// Folder that resource file names are relative to.
     pub fn folder(&self) -> Option<&Path> {
-        self.path.as_deref().and_then(Path::parent)
+        self.folder.as_deref()
     }
 
     pub fn file(&self) -> &ProjectFile {

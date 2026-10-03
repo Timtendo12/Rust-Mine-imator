@@ -119,6 +119,8 @@ pub fn run() {
             editing::undo,
             editing::redo,
             editing::save_project,
+            editing::backup_project,
+            editing::last_backup,
             editing::create_timeline,
             editing::remove_timelines,
             editing::duplicate_timelines,

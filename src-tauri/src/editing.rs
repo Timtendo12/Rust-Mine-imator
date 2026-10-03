@@ -219,6 +219,24 @@ pub fn save_project(path: Option<String>, app: tauri::AppHandle, state: State<'_
     Ok(edited)
 }
 
+/// Backups kept next to a project (`setting_backup_amount`).
+const BACKUP_AMOUNT: usize = 5;
+
+/// Writes a backup of the open project if it changed since the last one or
+/// since it was saved. Returns the file, if one was written.
+#[tauri::command]
+pub fn backup_project(state: State<'_, AppState>) -> Result<Option<String>, CommandError> {
+    let mut guard = state.project();
+    let Some(project) = guard.as_mut() else { return Ok(None) };
+    Ok(project.backup(BACKUP_AMOUNT)?.map(|path| path.to_string_lossy().into_owned()))
+}
+
+/// The newest backup of the open project, if it has one.
+#[tauri::command]
+pub fn last_backup(state: State<'_, AppState>) -> Option<String> {
+    state.project().as_ref()?.last_backup().map(|path| path.to_string_lossy().into_owned())
+}
+
 #[derive(Debug, Serialize)]
 pub struct Created {
     #[serde(flatten)]

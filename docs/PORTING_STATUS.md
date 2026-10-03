@@ -45,7 +45,7 @@ Legend: **done** · **partial** · **not started**
 | `legacy.midata` | not started | |
 | NBT, `.schematic`, `.nbt` structures, `.blocks` | done | NBT (plain and gzip), MCEdit schematics through the legacy id table, Sponge schematics versions 1–3, structures with palettes, integrity and jigsaw final states, legacy `.blocks`. Tile entity data (sign text, skull skins, banners) is not read yet. |
 | `.meshcache` | not started | Planned to be regenerated, not read |
-| Autosave backups (`.backupN`) | not started | The files themselves load as projects |
+| Autosave backups (`.backupN`) | done | Every 3 minutes, 5 kept, named and rotated as in the original; File > Open last backup. The interval and number are not settings yet |
 | Zipped projects | not started | |
 
 ## Project model and editing
@@ -160,7 +160,7 @@ Legend: **done** · **partial** · **not started**
 | Themes and accent colours, interface scale | not started | |
 | Translations | not started | |
 | Key bindings | not started | |
-| Recent projects, autosave, asset version updates | partial | Recent projects are kept and shown; autosave and asset updates not yet |
+| Recent projects, autosave, asset version updates | partial | Recent projects are kept and shown, changed projects are backed up; asset updates not yet |
 | Crash / error reporting, log file | not started | |
 
 ## Dropped on purpose

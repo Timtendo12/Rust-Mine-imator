@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import {
   appInfo,
+  backupProject,
   closeProject,
   copyKeyframes,
   createBlock,
@@ -16,6 +17,7 @@ import {
   evaluateFrame,
   exportImage,
   finishEdit,
+  lastBackup,
   moveKeyframes,
   newProject,
   openProject,
@@ -54,6 +56,9 @@ import { Properties } from "./Properties";
 import { StartScreen } from "./StartScreen";
 import { keyframeId, Timeline, type SelectMode } from "./Timeline";
 import { Viewport } from "./Viewport";
+
+/** Minutes between backups of a changed project (`setting_backup_time`). */
+const BACKUP_MINUTES = 3;
 
 /** Whether keys typed now belong to a text field rather than to shortcuts. */
 const typingInField = () => {
@@ -118,6 +123,16 @@ export function App() {
       .setTitle(title)
       .catch(() => undefined);
   }, [project]);
+
+  // Backups: every few minutes, if the project has a file and changed.
+  const projectPath = project?.path ?? null;
+  useEffect(() => {
+    if (!projectPath) return;
+    const timer = setInterval(() => {
+      backupProject().catch((e) => setError(`The backup failed: ${e}`));
+    }, BACKUP_MINUTES * 60_000);
+    return () => clearInterval(timer);
+  }, [projectPath]);
 
   // The frame editor shows the selected timeline at the current frame.
   useEffect(() => {
@@ -382,6 +397,15 @@ export function App() {
     if (typeof path === "string") await loadProject(path);
   }, [confirmDiscard, loadProject]);
 
+  const openLastBackup = useCallback(async () => {
+    const path = await lastBackup();
+    if (!path) {
+      setError("This project has no backup yet.");
+      return;
+    }
+    if (await confirmDiscard()) await loadProject(path);
+  }, [confirmDiscard, loadProject]);
+
   const startNew = useCallback(async () => {
     if (!(await confirmDiscard())) return;
     setPlaying(false);
@@ -479,6 +503,7 @@ export function App() {
         { label: "Open project…", action: browse },
         { label: "Save project", action: () => void doSave(), shortcut: "Ctrl+S" },
         { label: "Save as…", action: () => void saveAs(), shortcut: "Ctrl+Shift+S" },
+        { label: "Open last backup", action: project.path ? () => void openLastBackup() : undefined },
         { label: "Import asset…" },
         { label: "Close project", action: () => void close() },
       ],

@@ -223,6 +223,12 @@ export const undo = () => invoke<Edited>("undo");
 
 export const redo = () => invoke<Edited>("redo");
 
+/** Writes a backup next to the project if it changed; gives the file written. */
+export const backupProject = () => invoke<string | null>("backup_project");
+
+/** The newest backup of the open project. */
+export const lastBackup = () => invoke<string | null>("last_backup");
+
 /** Saves to the project's file, or to `path` (save as). */
 export const saveProject = (path: string | null = null) => invoke<Edited>("save_project", { path });
 

@@ -339,5 +339,6 @@ impl Project {
         self.rebuild_indices();
         self.rebuild_tree();
         self.changed = true;
+        self.unsaved_backup = true;
     }
 }
