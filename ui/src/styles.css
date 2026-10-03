@@ -986,7 +986,8 @@ input.swatch-color {
   touch-action: none;
 }
 
-.gizmo-control polygon {
+.gizmo-control polygon,
+.gizmo-control rect {
   pointer-events: fill;
 }
 
@@ -994,6 +995,7 @@ input.swatch-color {
   fill: none;
   stroke: transparent;
   stroke-width: 20px;
+  stroke-linecap: round;
 }
 
 .gizmo-line {

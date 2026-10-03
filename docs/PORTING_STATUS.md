@@ -114,7 +114,7 @@ Legend: **done** · **partial** · **not started**
 | Items | partial: item timelines from pack textures, flat or extruded pixel by pixel (`render_generate_item`, `vbuffer_add_pixels`), and a keyframe's custom item. Not yet: item sheets of resources, facing the camera, spinning and bouncing |
 | Paths, particles | not started |
 | Animated background (background timelines overriding the sky settings) | not started |
-| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. The selected timeline has the move arrows of `view_control_move` and the rotation rings of `view_control_rotate`, switched with the Move/Rotate tool; a drag is one undo step. Not yet: move planes, scale and bend controls, snapping, grid, overlays |
+| Picking, selection outline, gizmos, grid, overlays | partial: clicking selects (`view_click`: the outermost unlocked timeline first, the clicked part once something is selected or with Ctrl; selected and locked timelines let clicks through; lights and cameras by a box); the selection and everything below it gets the white border of `render_select`. The selected timeline has the move arrows of `view_control_move` the rotation rings of `view_control_rotate` and the scale handles of `view_control_scale`, switched with the Move/Rotate/Scale tool; a drag is one undo step. Not yet: move and scale planes, scaling all axes at once, the bend control, snapping, grid, overlays |
 | Work camera: orbit, pan, zoom | done (zoom is immediate, not eased) |
 | Work camera: fly mode (right drag + keys) | not started |
 | Timeline cameras (active camera view, FOV, orbit) | done |
@@ -146,7 +146,7 @@ Legend: **done** · **partial** · **not started**
 | Shortcut bar | partial | Static hints for the viewport |
 | Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). Region (right drag on the ruler, edges dragged), repeat modes, markers (added at the playhead, dragged, edited by double click). Sound clips. No box selection. |
 | Docking panels, pop-out windows | not started | |
-| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move and rotate tools. No second view or overlays. |
+| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move, rotate and scale tools. No second view or overlays. |
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes, reparenting, markers, regions and sound clips (not resizable by dragging yet) |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |

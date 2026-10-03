@@ -1,6 +1,7 @@
 //! The controls drawn over the selected timeline in the viewport
-//! (`view_control_move`, `view_control_rotate`): arrows along the axes its
-//! position is given in, and a ring per rotation axis. The backend works
+//! (`view_control_move`, `view_control_rotate`, `view_control_scale`):
+//! arrows along the axes its position is given in, a ring per rotation
+//! axis, and a handle per axis it is scaled along. The backend works
 //! out where they are on screen; the frontend draws them and turns drags
 //! into value changes.
 
@@ -57,6 +58,8 @@ pub struct Gizmo {
     #[serde(rename = "move")]
     pub move_axes: Vec<MoveAxis>,
     pub rotate: Vec<RotateAxis>,
+    /// Handles for scaling; dragged like the move arrows.
+    pub scale: Vec<MoveAxis>,
 }
 
 /// Projects a world position to the viewport; `None` behind the camera.
@@ -70,8 +73,10 @@ fn project(view_proj: &glam::Mat4, width: f64, height: f64, p: [f64; 3]) -> Opti
 }
 
 /// The controls of a timeline of type `kind` in state `node`, seen through
-/// `camera` in a viewport of `width` × `height` pixels.
-pub fn gizmo(kind: TlType, node: &NodeState, camera: &Camera, width: f64, height: f64) -> Gizmo {
+/// `camera` in a viewport of `width` × `height` pixels. `scale_resize` is
+/// the timeline's setting of that name: scaling then follows its own
+/// rotation instead of its parent's axes.
+pub fn gizmo(kind: TlType, node: &NodeState, scale_resize: bool, camera: &Camera, width: f64, height: f64) -> Gizmo {
     if width < 1.0 || height < 1.0 {
         return Gizmo::default();
     }
@@ -104,6 +109,22 @@ pub fn gizmo(kind: TlType, node: &NodeState, camera: &Camera, width: f64, height
             if let (Some(a), Some(b)) = (screen(along(start)), screen(along(end))) {
                 let scale = if parent_scale[axis].abs() > 1e-9 { parent_scale[axis] } else { 1.0 };
                 out.move_axes.push(MoveAxis { value: value.name(), start: a, end: b, length: end, scale });
+            }
+        }
+    }
+
+    if types.has(ValueType::TransformSca) {
+        let mut own = if scale_resize { node.matrix } else { frame };
+        own.remove_scale();
+        // Dragging along the whole handle changes the scale by a
+        // twentieth of the control's size, as in the original.
+        let (end, amount) = (reach * 0.45, reach * 0.05);
+        let centre = screen(own.position());
+        for (axis, value) in [ValueId::ScaX, ValueId::ScaY, ValueId::ScaZ].into_iter().enumerate() {
+            let mut p = [0.0; 3];
+            p[axis] = end;
+            if let (Some(a), Some(b)) = (centre, screen(own.transform_point(p))) {
+                out.scale.push(MoveAxis { value: value.name(), start: a, end: b, length: amount, scale: 1.0 });
             }
         }
     }
@@ -162,7 +183,7 @@ mod tests {
 
     #[test]
     fn arrows_point_along_the_axes_on_screen() {
-        let g = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0; 3]), &camera(), 400.0, 400.0);
+        let g = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0; 3]), false, &camera(), 400.0, 400.0);
         let center = g.center.unwrap();
         assert!((center[0] - 200.0).abs() < 1e-3 && (center[1] - 200.0).abs() < 1e-3);
         assert_eq!(g.move_axes.iter().map(|a| a.value).collect::<Vec<_>>(), ["POS_X", "POS_Y", "POS_Z"]);
@@ -176,14 +197,20 @@ mod tests {
         // The arrow is as long as the control is big at this distance.
         assert!((x.length - 100.0 * CONTROL_SIZE).abs() < 1e-9 && x.scale == 1.0);
         // Far away the control keeps its size on screen.
-        let far = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0, 400.0, 0.0]), &camera(), 400.0, 400.0);
+        let far = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0, 400.0, 0.0]), false, &camera(), 400.0, 400.0);
         let screen_length = |a: &MoveAxis| ((a.end[0] - a.start[0]).powi(2) + (a.end[1] - a.start[1]).powi(2)).sqrt();
         assert!((screen_length(&far.move_axes[0]) - screen_length(x)).abs() < 1e-3);
     }
 
     #[test]
     fn rings_and_types() {
-        let g = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0; 3]), &camera(), 400.0, 400.0);
+        let g = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0; 3]), false, &camera(), 400.0, 400.0);
+        // Scale handles start at the centre and are shorter than the arrows.
+        assert_eq!(g.scale.iter().map(|a| a.value).collect::<Vec<_>>(), ["SCA_X", "SCA_Y", "SCA_Z"]);
+        let (handle, arrow) = (&g.scale[2], &g.move_axes[2]);
+        assert_eq!(handle.start, g.center.unwrap());
+        assert!(handle.end[1] < handle.start[1] && handle.end[1] > arrow.end[1]);
+        assert!((handle.length - 100.0 * CONTROL_SIZE * 0.05).abs() < 1e-9);
         assert_eq!(g.rotate.iter().map(|r| r.value).collect::<Vec<_>>(), ["ROT_X", "ROT_Y", "ROT_Z"]);
         assert!(g.rotate.iter().all(|r| r.points.len() == RING_DETAIL + 1));
         // Seen from the front the Z ring is edge-on: a horizontal line.
@@ -191,9 +218,10 @@ mod tests {
         assert!(z.points.iter().all(|p| (p[1] - 200.0).abs() < 1e-3));
         // Point lights do not rotate; folders have no controls of their own
         // beyond moving.
-        assert!(gizmo(TlType::PointLight, &node_at(TlType::PointLight, [0.0; 3]), &camera(), 400.0, 400.0).rotate.is_empty());
+        let light = gizmo(TlType::PointLight, &node_at(TlType::PointLight, [0.0; 3]), false, &camera(), 400.0, 400.0);
+        assert!(light.rotate.is_empty() && light.scale.is_empty() && !light.move_axes.is_empty());
         // Behind the camera nothing is shown.
-        let behind = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0, -500.0, 0.0]), &camera(), 400.0, 400.0);
+        let behind = gizmo(TlType::Cube, &node_at(TlType::Cube, [0.0, -500.0, 0.0]), false, &camera(), 400.0, 400.0);
         assert!(behind.center.is_none() && behind.move_axes.is_empty());
     }
 }

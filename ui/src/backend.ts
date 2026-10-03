@@ -403,6 +403,8 @@ export interface Gizmo {
     /** Scale of the parent along the axis. */
     scale: number;
   }[];
+  /** Handles for scaling, dragged like the move arrows; `length` is the change over the whole handle. */
+  scale: Gizmo["move"];
   rotate: {
     value: string;
     points: [number, number][];

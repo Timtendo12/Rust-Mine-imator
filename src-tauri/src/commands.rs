@@ -700,5 +700,6 @@ pub fn viewport_gizmo(id: String, state: State<'_, AppState>) -> Result<crate::g
     let view_camera =
         if view.use_timeline_camera { ViewCamera::Active(view.work_camera) } else { ViewCamera::Work(view.work_camera) };
     let camera = scene_camera(project, &scene, &order, view.marker, view_camera);
-    Ok(crate::gizmo::gizmo(project.timelines()[index].kind, &scene.nodes[node], &camera, rect.width as f64, rect.height as f64))
+    let timeline = &project.timelines()[index];
+    Ok(crate::gizmo::gizmo(timeline.kind, &scene.nodes[node], timeline.scale_resize, &camera, rect.width as f64, rect.height as f64))
 }

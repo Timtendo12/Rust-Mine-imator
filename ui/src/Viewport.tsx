@@ -19,7 +19,7 @@ const CLICK_DISTANCE = 4;
 /** Colours of the axes as the original shows them with "Z is up" off. */
 const AXIS_COLORS: Record<string, string> = { X: "#ff4d4d", Y: "#4d8dff", Z: "#5fd35f" };
 
-type Tool = "move" | "rotate";
+type Tool = "move" | "rotate" | "scale";
 
 interface Props {
   selected: string | null;
@@ -193,7 +193,7 @@ export function Viewport({ selected, frame, onPick, onEditValues, onEditDone }: 
     event.stopPropagation();
     if (event.movementX === 0 && event.movementY === 0) return;
 
-    const axis = g.move.find((a) => a.value === drag.value);
+    const axis = g.move.find((a) => a.value === drag.value) ?? g.scale.find((a) => a.value === drag.value);
     if (axis) {
       // How far along the arrow's direction on screen the mouse went, as a
       // share of the arrow, is how far along it the object moves.
@@ -255,6 +255,9 @@ export function Viewport({ selected, frame, onPick, onEditValues, onEditDone }: 
           <button className={tool === "rotate" ? "active" : ""} onClick={() => setTool("rotate")} title="Rotate the selection">
             Rotate
           </button>
+          <button className={tool === "scale" ? "active" : ""} onClick={() => setTool("scale")} title="Scale the selection">
+            Scale
+          </button>
         </div>
         <span className="spacer" />
         <label>
@@ -290,6 +293,18 @@ export function Viewport({ selected, frame, onPick, onEditValues, onEditDone }: 
                       fill={colorOf(axis.value)}
                       transform={`translate(${x2} ${y2}) rotate(${angle})`}
                     />
+                  </g>
+                );
+              })}
+            {tool === "scale" &&
+              gizmo.scale.map((axis) => {
+                const [x1, y1] = css(axis.start);
+                const [x2, y2] = css(axis.end);
+                return (
+                  <g key={axis.value} className="gizmo-control" {...handlers(axis.value)}>
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} className="gizmo-hit" />
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={colorOf(axis.value)} className="gizmo-line" />
+                    <rect x={x2 - 5} y={y2 - 5} width={10} height={10} fill={colorOf(axis.value)} />
                   </g>
                 );
               })}
