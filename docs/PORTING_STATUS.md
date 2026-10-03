@@ -15,7 +15,7 @@ Legend: **done** · **partial** · **not started**
 | 3 | Assets: Minecraft pack, block and character models, atlases, schematics | partial (see below) |
 | 4 | Renderer (low quality) and viewport | partial (see below) |
 | 5 | Editor shell: docking, timeline, editors, workbench, undo | partial (see below) |
-| 6 | Renderer (high quality) and post effects | not started |
+| 6 | Renderer (high quality) and post effects | partial (see below) |
 | 7 | Particles, audio, export | partial (see below) |
 | 8 | World import and remaining tools | not started |
 | 9 | Hardening and performance | not started |
@@ -120,7 +120,7 @@ Legend: **done** · **partial** · **not started**
 | Timeline cameras (active camera view, FOV, orbit) | done |
 | Camera shake | done |
 | Offscreen rendering with pixel readback | done (used by tests, thumbnails and export) |
-| High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | not started |
+| High quality mode: shadows, SSAO, indirect light, reflections, subsurface, glint | partial: the "Render" view mode and high quality exports gather the project's number of samples, each shifted within the pixel (smooth edges) and with the sun moved within its disc (soft shadows); sun shadows in three cascades as in `render_update_cascades`; lighting per pixel with GGX highlights from the sun; timelines can be set not to cast shadows. Drawn in one pass per sample instead of composited from separate surfaces. Not yet: shadows of point and spot lights, spot light cones, SSAO, indirect light, reflections, subsurface scattering, glint, transparent shadows |
 | Post effects: DOF, glow, bloom, lens dirt, CA, distort, colour correction, grain, vignette | not started |
 | Tonemapping, alpha modes, material formats | not started |
 | Debug render passes | not started |
@@ -132,8 +132,8 @@ Legend: **done** · **partial** · **not started**
 | Particle simulation (deterministic, seeded) | partial: steady spawning spread over a minute and bursts fired by keyframes, motion (launch direction, speed, acceleration, damping), rotation, sprite turn, scale, alpha, colour mixing, sprite animation, lifetimes and the amount limit, spawn regions (sphere, cube, box), bounding boxes (ground, spawn region, custom) with bouncing, freezing, clearing, point attractors. The generator is the Mersenne Twister the original's runtime uses; spawners without a seed of their own repeat when replayed instead of following the clock. Not yet: paths as spawn region, bounding box or attractor |
 | Particle editor | not started |
 | Audio decoding, playback, waveforms | partial: sound resources (MP3, Ogg Vorbis, WAV, FLAC, AAC) decoded to 44.1 kHz stereo; audio timelines with sound keyframes (volume, pitch, start, end as in `tl_keyframe_length`); added from the workbench; played along with the animation as one mix; shown as clips on the timeline. Not yet: waveforms in the clips, resizing clips by dragging, WMA files |
-| Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. Not yet: high quality, the options to include hidden objects, remove the background or add the watermark |
-| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. The region is exported when there is one, with its sounds mixed in (AAC, or WMA in wmv, 320 kbit/s). Not yet: high quality, hidden objects, removing the background, watermark, remembering the settings |
+| Image export | partial: Render > Export image (F10) saves the current frame as PNG at the project's size through the active camera, with the low quality renderer. In high quality. Not yet: the options to include hidden objects, remove the background or add the watermark |
+| Image sequence and video export with audio | partial: Render > Export animation renders every frame at the export frame rate through the active camera into numbered PNG files (named as the original names them) or, through `ffmpeg`, an mp4, mov or wmv video with the original's qualities; progress and stopping. The region is exported when there is one, with its sounds mixed in (AAC, or WMA in wmv, 320 kbit/s), in high quality or not. Not yet: hidden objects, removing the background, watermark, remembering the settings |
 
 ## User interface
 
@@ -146,7 +146,7 @@ Legend: **done** · **partial** · **not started**
 | Shortcut bar | partial | Static hints for the viewport |
 | Timeline | partial | Tree, keyframe tracks, scrubbing, playback at project tempo, keyframe selection (Shift/Ctrl to add), dragging and deleting keyframes, renaming (double click) and hiding timelines. Copy, cut and paste of keyframes (pasting at the frame under the mouse). Region (right drag on the ruler, edges dragged), repeat modes, markers (added at the playhead, dragged, edited by double click). Sound clips. No box selection. |
 | Docking panels, pop-out windows | not started | |
-| Viewport | partial | One view with flat/shaded mode, work or active camera, mouse orbit/pan/zoom, click selection, move, rotate and scale tools. No second view or overlays. |
+| Viewport | partial | One view with flat, shaded and render (high quality, progressive) modes, work or active camera, mouse orbit/pan/zoom, click selection, move, rotate and scale tools. No second view or overlays. |
 | Timeline editing (keyframes, reparenting, markers, regions, audio clips) | partial | Keyframes, reparenting, markers, regions and sound clips (not resizable by dragging yet) |
 | New project | done | File > New project (Ctrl+N), saved with save as |
 | Saving from the editor | partial | Save and save as (Ctrl+S, Ctrl+Shift+S), unsaved-changes mark in the title and a question before closing. Saving writes `thumbnail.png` (240 x 180, work camera) and moves the project to the top of the recent list, as `recent_add` does. Backups and autosave are not written yet |

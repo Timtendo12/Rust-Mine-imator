@@ -359,3 +359,80 @@ fn wind_moves_what_is_set_to_sway() {
     let gusty = ObjectWind { directional_strength: 20.0, ..whole };
     assert!(render(&gpu, &mut renderer, &windy(1.0, gusty)) != early);
 }
+
+#[test]
+fn high_quality_gathers_samples_and_casts_sun_shadows() {
+    use mi_render::HighSettings;
+    let Some(gpu) = gpu() else { return };
+    let (mut renderer, cube) = cube_renderer(&gpu);
+
+    // A cube floating over a wide, thin floor, seen from above and aside,
+    // with the sun overhead.
+    let floor_model = Mat4::from_translation(Vec3::new(0.0, 0.0, -20.0)) * Mat4::from_scale(Vec3::new(20.0, 20.0, 0.1));
+    let floor = RenderObject::new(cube, floor_model.to_cols_array());
+    let floating = RenderObject::new(cube, translation(0.0, 0.0, 0.0));
+    let mut s = scene(vec![floor, floating]);
+    s.camera.from = Vec3::new(0.0, -150.0, 120.0);
+    s.camera.to = Vec3::new(0.0, 0.0, -20.0);
+    let pixel_of = |world: Vec3| {
+        let clip = s.camera.view_projection(1.0) * world.extend(1.0);
+        let ndc = clip.truncate() / clip.w;
+        (((ndc.x * 0.5 + 0.5) * SIZE as f32) as u32, ((0.5 - ndc.y * 0.5) * SIZE as f32) as u32)
+    };
+    let under = pixel_of(Vec3::new(0.0, 0.0, -19.2));
+    let beside = pixel_of(Vec3::new(60.0, 0.0, -19.2));
+
+    let target = OffscreenTarget::new(&gpu.device, &gpu.queue, &renderer, SIZE, SIZE);
+    let render = |renderer: &mut Renderer, settings: &HighSettings, scene: &RenderScene| {
+        let mut calls = 0;
+        while renderer.render_high(&target.color, target.viewport(), scene, settings) {
+            calls += 1;
+            assert!(calls < 100);
+        }
+        (target.read_rgba().unwrap(), calls + 1)
+    };
+
+    // Samples are gathered one per call until there are enough.
+    let settings = HighSettings { samples: 6, sun_buffer_size: 512, ..Default::default() };
+    let (image, calls) = render(&mut renderer, &settings, &s);
+    assert_eq!(calls, 6);
+    assert_eq!(renderer.high_samples(SIZE, SIZE), 6);
+    // Asking again changes nothing and wants no more.
+    assert!(!renderer.render_high(&target.color, target.viewport(), &s, &settings));
+    assert_eq!(target.read_rgba().unwrap(), image);
+
+    // The floor under the cube is in its shadow; beside it, in the sun.
+    let lit = brightness(pixel(&image, beside.0, beside.1));
+    let shaded = brightness(pixel(&image, under.0, under.1));
+    assert!(lit > shaded + 150, "lit {lit}, shaded {shaded}");
+    assert_eq!(pixel(&image, 1, 1), SKY);
+
+    // Without shadows both are lit alike. A change of settings starts over.
+    let no_shadows = HighSettings { shadows: false, ..settings };
+    let (plain, calls) = render(&mut renderer, &no_shadows, &s);
+    assert_eq!(calls, 6);
+    let a = brightness(pixel(&plain, beside.0, beside.1));
+    let b = brightness(pixel(&plain, under.0, under.1));
+    assert!((a as i32 - b as i32).abs() < 12, "{a} {b}");
+
+    // An object that casts no shadow leaves the floor lit.
+    let mut ghost = s.clone();
+    ghost.objects[1].shadows = false;
+    let (image, _) = render(&mut renderer, &settings, &ghost);
+    let shaded = brightness(pixel(&image, under.0, under.1));
+    assert!((lit as i32 - shaded as i32).abs() < 12, "{lit} {shaded}");
+
+    // Edges are smoothed by the shifted samples: along the cube's outline
+    // there are in-between colours, which one sample does not give.
+    let single = HighSettings { samples: 1, ..settings };
+    let (hard, _) = render(&mut renderer, &single, &s);
+    let (smooth, _) = render(&mut renderer, &HighSettings { samples: 16, ..settings }, &s);
+    let colours = |image: &[u8]| {
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..SIZE * SIZE {
+            seen.insert(pixel(image, i % SIZE, i / SIZE));
+        }
+        seen.len()
+    };
+    assert!(colours(&smooth) > colours(&hard) * 2, "{} {}", colours(&smooth), colours(&hard));
+}

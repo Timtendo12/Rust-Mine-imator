@@ -9,7 +9,8 @@
 //! `MI_RENDER_LOOK_AT=<save id>`, `MI_RENDER_ANGLE`,
 //! `MI_RENDER_ELEV`, `MI_RENDER_ZOOM` (otherwise the saved work camera is
 //! used), `MI_RENDER_SELECT=<save id or display type>` to outline timelines
-//! and `MI_RENDER_PICK=x,y` to print what a click there picks.
+//! `MI_RENDER_PICK=x,y` to print what a click there picks, and
+//! `MI_RENDER_HIGH=1` for the high quality mode.
 
 use crate::scene_builder::{build_scene, saved_work_camera, SceneInputs, ViewCamera, ViewMode};
 use crate::viewport::render_resources;
@@ -100,7 +101,13 @@ fn render_check() {
 
     let (width, height) = (960, 540);
     let target = OffscreenTarget::new(&device, &queue, &renderer, width, height);
-    renderer.render(&target.color, &target.depth, target.viewport(), &scene, true);
+    // `MI_RENDER_HIGH=1` renders in high quality, all samples.
+    if std::env::var("MI_RENDER_HIGH").is_ok() {
+        let settings = crate::scene_builder::high_settings(&project);
+        while renderer.render_high(&target.color, target.viewport(), &scene, &settings) {}
+    } else {
+        renderer.render(&target.color, &target.depth, target.viewport(), &scene, true);
+    }
     let pixels = target.read_rgba().unwrap();
     image::save_buffer(&out, &pixels, width, height, image::ColorType::Rgba8).unwrap();
     eprintln!("{} objects, {} outlined", scene.objects.len(), scene.objects.iter().filter(|o| o.selected).count());

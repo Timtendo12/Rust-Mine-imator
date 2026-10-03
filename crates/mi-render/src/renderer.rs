@@ -51,8 +51,8 @@ pub struct Viewport {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct FrameUniform {
-    view_proj: [f32; 16],
+pub(crate) struct FrameUniform {
+    pub(crate) view_proj: [f32; 16],
     camera_position: [f32; 4],
     sun_direction: [f32; 4],
     ambient_color: [f32; 4],
@@ -122,9 +122,9 @@ enum Pass {
     Mask,
 }
 
-struct GpuMesh {
-    buffer: wgpu::Buffer,
-    vertex_count: u32,
+pub(crate) struct GpuMesh {
+    pub(crate) buffer: wgpu::Buffer,
+    pub(crate) vertex_count: u32,
 }
 
 /// How a texture is sampled.
@@ -137,9 +137,12 @@ pub enum TextureFilter {
 
 /// Draws [`RenderScene`]s with wgpu.
 pub struct Renderer {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    target_format: wgpu::TextureFormat,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) target_format: wgpu::TextureFormat,
+    /// What the high quality mode needs, once it has been used.
+    pub(crate) high: Option<crate::high::High>,
+    pub(crate) frame_layout: wgpu::BindGroupLayout,
     pipeline_cull: wgpu::RenderPipeline,
     pipeline_two_sided: wgpu::RenderPipeline,
     pipeline_sky: wgpu::RenderPipeline,
@@ -154,18 +157,18 @@ pub struct Renderer {
     mask: Option<SelectionMask>,
     /// 1×1 targets of the pick pass and the buffer it is read into.
     pick_target: (wgpu::Texture, wgpu::TextureView, wgpu::TextureView, wgpu::Buffer),
-    frame_buffer: wgpu::Buffer,
-    frame_bind: wgpu::BindGroup,
-    object_layout: wgpu::BindGroupLayout,
+    pub(crate) frame_buffer: wgpu::Buffer,
+    pub(crate) frame_bind: wgpu::BindGroup,
+    pub(crate) object_layout: wgpu::BindGroupLayout,
     object_buffer: wgpu::Buffer,
-    object_bind: wgpu::BindGroup,
+    pub(crate) object_bind: wgpu::BindGroup,
     object_capacity: usize,
-    object_stride: u64,
-    texture_layout: wgpu::BindGroupLayout,
-    textures: Vec<wgpu::BindGroup>,
-    white: wgpu::BindGroup,
+    pub(crate) object_stride: u64,
+    pub(crate) texture_layout: wgpu::BindGroupLayout,
+    pub(crate) textures: Vec<wgpu::BindGroup>,
+    pub(crate) white: wgpu::BindGroup,
     /// `None` for removed meshes; their slots are reused.
-    meshes: Vec<Option<GpuMesh>>,
+    pub(crate) meshes: Vec<Option<GpuMesh>>,
     free_meshes: Vec<usize>,
 }
 
@@ -471,6 +474,8 @@ impl Renderer {
             device: device.clone(),
             queue: queue.clone(),
             target_format,
+            high: None,
+            frame_layout,
             pipeline_cull,
             pipeline_two_sided,
             pipeline_sky,
@@ -572,7 +577,7 @@ impl Renderer {
             .create_view(&wgpu::TextureViewDescriptor::default())
     }
 
-    fn frame_uniform(scene: &RenderScene, aspect: f32) -> FrameUniform {
+    pub(crate) fn frame_uniform(scene: &RenderScene, aspect: f32) -> FrameUniform {
         let lighting = &scene.lighting;
         let rgb = |c: [f32; 3], a: f32| [c[0], c[1], c[2], a];
         let mut lights = [[0.0; 4]; 128];
@@ -606,7 +611,7 @@ impl Renderer {
 
     /// Writes the uniforms of the objects that can be drawn (known, non-empty
     /// meshes) and are accepted by `keep`, and returns them in that order.
-    fn upload_objects<'s>(&mut self, scene: &'s RenderScene, keep: impl Fn(&RenderObject) -> bool) -> Vec<&'s RenderObject> {
+    pub(crate) fn upload_objects<'s>(&mut self, scene: &'s RenderScene, keep: impl Fn(&RenderObject) -> bool) -> Vec<&'s RenderObject> {
         let drawable: Vec<&RenderObject> = scene
             .objects
             .iter()
@@ -787,7 +792,7 @@ impl Renderer {
 
     /// Draws a border around the selected objects (`render_select`): they
     /// are drawn into a mask, and pixels just outside it get the colour.
-    fn outline_selection(
+    pub(crate) fn outline_selection(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color: &wgpu::TextureView,

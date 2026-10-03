@@ -265,6 +265,7 @@ export function Viewport({ selected, frame, onPick, onEditValues, onEditDone }: 
           <select value={mode} onChange={(e) => setMode(e.target.value as ViewMode)}>
             <option value="flat">Flat</option>
             <option value="shaded">Shaded</option>
+            <option value="render">Render</option>
           </select>
         </label>
       </div>

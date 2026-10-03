@@ -286,7 +286,7 @@ pub(crate) fn write_thumbnail(state: &AppState) {
     let Some(folder) = state.project().as_ref().and_then(|p| p.folder().map(std::path::Path::to_owned)) else { return };
     let Some(viewport) = state.viewport() else { return };
     let (width, height) = THUMBNAIL_SIZE;
-    let Some(pixels) = viewport.render_image(width, height, false) else { return };
+    let Some(pixels) = viewport.render_image(width, height, false, false) else { return };
     let path = folder.join("thumbnail.png");
     if let Err(error) = image::save_buffer(&path, &pixels, width, height, image::ColorType::Rgba8) {
         eprintln!("Could not write {}: {error}", path.display());
@@ -297,7 +297,7 @@ pub(crate) fn write_thumbnail(state: &AppState) {
 /// image (`action_toolbar_exportimage_save`), through the active camera if
 /// the project has one.
 #[tauri::command]
-pub fn export_image(path: String, state: State<'_, AppState>) -> Result<(), CommandError> {
+pub fn export_image(path: String, high_quality: bool, state: State<'_, AppState>) -> Result<(), CommandError> {
     let (width, height) = {
         let guard = state.project();
         let info = &guard.as_ref().ok_or(CommandError::NoProject)?.file().info;
@@ -305,7 +305,7 @@ pub fn export_image(path: String, state: State<'_, AppState>) -> Result<(), Comm
     };
     let failed = |reason: String| CommandError::Write { path: path.clone(), reason };
     let viewport = state.viewport().ok_or_else(|| failed("the viewport is not running".into()))?;
-    let pixels = viewport.render_image(width, height, true).ok_or_else(|| failed("rendering failed".into()))?;
+    let pixels = viewport.render_image(width, height, true, high_quality).ok_or_else(|| failed("rendering failed".into()))?;
     image::save_buffer(&path, &pixels, width, height, image::ColorType::Rgba8).map_err(|e| failed(e.to_string()))
 }
 
@@ -314,6 +314,18 @@ pub fn export_image(path: String, state: State<'_, AppState>) -> Result<(), Comm
 pub struct ExportProgress {
     frame: usize,
     total: usize,
+}
+
+/// The choices of the export dialog.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MovieRequest {
+    /// `mp4`, `mov`, `wmv` or `png`.
+    format: String,
+    frames_per_second: f64,
+    bit_rate: u64,
+    include_audio: bool,
+    high_quality: bool,
 }
 
 /// What an export made.
@@ -328,15 +340,8 @@ pub struct Exported {
 /// (`action_toolbar_exportmovie_save`). Runs off the main thread; the
 /// viewport shows the frames as they are made.
 #[tauri::command(async)]
-pub fn export_movie(
-    path: String,
-    format: String,
-    frames_per_second: f64,
-    bit_rate: u64,
-    include_audio: bool,
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Exported, CommandError> {
+pub fn export_movie(path: String, options: MovieRequest, app: AppHandle, state: State<'_, AppState>) -> Result<Exported, CommandError> {
+    let MovieRequest { format, frames_per_second, bit_rate, include_audio, high_quality } = options;
     use crate::export::{self, Format, MovieOptions, Outcome};
     use std::sync::atomic::Ordering;
     use tauri::Emitter;
@@ -383,7 +388,7 @@ pub fn export_movie(
         sequence_total,
         |marker| {
             state.update_view(|view| view.marker = marker);
-            viewport.render_image(size.0, size.1, true)
+            viewport.render_image(size.0, size.1, true, high_quality)
         },
         |frame| {
             done = frame;

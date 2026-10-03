@@ -39,8 +39,7 @@ pub struct SceneInputs<'a> {
     pub particles: Option<&'a std::sync::Mutex<crate::particles::ParticleStore>>,
 }
 
-/// How a viewport shows the scene (`e_view_mode`, without the high quality
-/// mode, which is not implemented yet).
+/// How a viewport shows the scene (`e_view_mode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ViewMode {
@@ -48,6 +47,21 @@ pub enum ViewMode {
     Flat,
     /// Sun and lights, per vertex.
     Shaded,
+    /// High quality: shadows and smoothed edges, gathered over many samples.
+    Render,
+}
+
+/// The settings of the high quality mode of a project.
+pub fn high_settings(project: &Project) -> mi_render::HighSettings {
+    let render = &project.file().render;
+    mi_render::HighSettings {
+        samples: render.samples.clamp(1.0, 256.0) as u32,
+        shadows: render.shadows,
+        sun_buffer_size: render.shadows_sun_buffer_size.clamp(16.0, 8192.0) as u32,
+        antialiasing: render.aa,
+        antialiasing_power: render.aa_power as f32,
+        sun_angle: project.file().background.sunlight_angle as f32,
+    }
 }
 
 /// Which camera a viewport looks through.
@@ -723,6 +737,7 @@ pub fn build_scene(
             object.pick = order[node_index] as u32 + 1;
             object.selected = selected && !object.pick_only;
             object.wind = wind;
+            object.shadows = timeline.appearance.shadows;
         }
     }
 

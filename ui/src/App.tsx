@@ -436,7 +436,7 @@ export function App() {
     });
     if (typeof path !== "string") return;
     try {
-      await exportImage(path);
+      await exportImage(path, true);
     } catch (e) {
       setError(String(e));
     }

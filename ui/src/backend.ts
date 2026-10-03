@@ -141,7 +141,7 @@ export const openProject = (path: string) => invoke<ProjectSummary>("open_projec
 
 export const evaluateFrame = (marker: number) => invoke<FrameState>("evaluate_frame", { marker });
 
-export type ViewMode = "flat" | "shaded";
+export type ViewMode = "flat" | "shaded" | "render";
 
 /** Where the viewport element is on the window, in physical pixels. */
 export const setViewportRect = (x: number, y: number, width: number, height: number) =>
@@ -337,7 +337,7 @@ export const viewportPick = (x: number, y: number, exact: boolean, selected: str
 export const setSelection = (timelines: string[]) => invoke<void>("set_selection", { timelines });
 
 /** Renders the current frame at the project's size into an image file. */
-export const exportImage = (path: string) => invoke<void>("export_image", { path });
+export const exportImage = (path: string, highQuality: boolean) => invoke<void>("export_image", { path, highQuality });
 
 export type MovieFormat = "mp4" | "mov" | "wmv" | "png";
 
@@ -345,8 +345,16 @@ export type MovieFormat = "mp4" | "mov" | "wmv" | "png";
  * Renders the whole animation at the project's size into a video, or into
  * numbered images for "png". Progress arrives as `export-progress` events.
  */
-export const exportMovie = (path: string, format: MovieFormat, framesPerSecond: number, bitRate: number, includeAudio: boolean) =>
-  invoke<{ frames: number; cancelled: boolean }>("export_movie", { path, format, framesPerSecond, bitRate, includeAudio });
+export interface MovieOptions {
+  format: MovieFormat;
+  framesPerSecond: number;
+  bitRate: number;
+  includeAudio: boolean;
+  highQuality: boolean;
+}
+
+export const exportMovie = (path: string, options: MovieOptions) =>
+  invoke<{ frames: number; cancelled: boolean }>("export_movie", { path, options });
 
 /** Plays the sounds of the animation from a frame on, replacing what is playing. */
 export const audioPlay = (marker: number) => invoke<void>("audio_play", { marker });

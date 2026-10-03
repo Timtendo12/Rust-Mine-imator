@@ -118,6 +118,8 @@ pub struct RenderObject {
     pub selected: bool,
     pub layer: Layer,
     pub wind: ObjectWind,
+    /// Casts a shadow in the high quality mode.
+    pub shadows: bool,
 }
 
 impl RenderObject {
@@ -141,6 +143,7 @@ impl RenderObject {
             selected: false,
             layer: Layer::World,
             wind: ObjectWind::default(),
+            shadows: true,
         }
     }
 }

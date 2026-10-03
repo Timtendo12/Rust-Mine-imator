@@ -35,6 +35,7 @@ export function ExportDialog({ project, onClose, onError }: Props) {
   const [frameRate, setFrameRate] = useState(30);
   const [customRate, setCustomRate] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(true);
+  const [highQuality, setHighQuality] = useState(true);
   const [progress, setProgress] = useState<{ frame: number; total: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
@@ -56,7 +57,7 @@ export function ExportDialog({ project, onClose, onError }: Props) {
     setResult(null);
     setProgress({ frame: 0, total: 0 });
     try {
-      const done = await exportMovie(path, format, frameRate, bitRate, includeAudio);
+      const done = await exportMovie(path, { format, framesPerSecond: frameRate, bitRate, includeAudio, highQuality });
       setResult(done.cancelled ? `Stopped after ${done.frames} frames.` : `Exported ${done.frames} frames.`);
     } catch (e) {
       setProgress(null);
@@ -142,6 +143,10 @@ export function ExportDialog({ project, onClose, onError }: Props) {
                 Include audio
               </label>
             )}
+            <label className="modal-check">
+              <input type="checkbox" checked={highQuality} onChange={(e) => setHighQuality(e.target.checked)} />
+              High quality (shadows and smooth edges; slower)
+            </label>
             <p className="modal-note">
               {project.videoWidth} × {project.videoHeight}, {seconds.toFixed(2)} seconds, {Math.floor(seconds * frameRate) + 1} frames, through the
               active camera (the work camera if there is none).

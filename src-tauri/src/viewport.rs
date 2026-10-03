@@ -45,7 +45,7 @@ enum Message {
     /// What is under a pixel of the viewport, leaving out some timelines.
     Pick { x: u32, y: u32, exclude: Vec<usize>, reply: Sender<Option<usize>> },
     /// The scene as an image of the given size, as RGBA rows.
-    Image { width: u32, height: u32, timeline_camera: bool, reply: Sender<Option<Vec<u8>>> },
+    Image { width: u32, height: u32, timeline_camera: bool, high_quality: bool, reply: Sender<Option<Vec<u8>>> },
 }
 
 /// Handle for asking the render thread to do something. Cheap to clone.
@@ -70,10 +70,11 @@ impl ViewportHandle {
     /// `timeline_camera` looks through the active camera timeline if there
     /// is one, otherwise the work camera is used. The selection outline is
     /// left out.
-    pub fn render_image(&self, width: u32, height: u32, timeline_camera: bool) -> Option<Vec<u8>> {
+    pub fn render_image(&self, width: u32, height: u32, timeline_camera: bool, high_quality: bool) -> Option<Vec<u8>> {
         let (reply, answer) = mpsc::channel();
-        self.sender.send(Message::Image { width, height, timeline_camera, reply }).ok()?;
-        answer.recv_timeout(std::time::Duration::from_secs(60)).ok().flatten()
+        self.sender.send(Message::Image { width, height, timeline_camera, high_quality, reply }).ok()?;
+        // High quality gathers all its samples first.
+        answer.recv_timeout(std::time::Duration::from_secs(600)).ok().flatten()
     }
 
     /// The timeline (by index) drawn at pixel (`x`, `y`) of the viewport,
@@ -190,28 +191,54 @@ impl RenderThread {
         self.depth = self.renderer.create_depth_view(width, height);
     }
 
-    fn draw(&mut self) {
+    /// Draws the view. Returns whether it wants to be drawn again: the
+    /// high quality mode gathers one sample at a time.
+    fn draw(&mut self) -> bool {
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 self.surface.configure(&self.device, &self.config);
                 match self.surface.get_current_texture() {
                     Ok(frame) => frame,
-                    Err(error) => return eprintln!("viewport: no frame after reconfiguring: {error}"),
+                    Err(error) => {
+                        eprintln!("viewport: no frame after reconfiguring: {error}");
+                        return false;
+                    }
                 }
             }
             // A timeout or a minimised window: try again on the next redraw.
-            Err(error) => return eprintln!("viewport: {error}"),
+            Err(error) => {
+                eprintln!("viewport: {error}");
+                return false;
+            }
         };
         let color = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let (scene, rect) = self.scene(None);
+        let high = self.high_settings();
 
-        match scene {
-            Some(scene) => self.renderer.render(&color, &self.depth, rect, &scene, true),
-            None => self.clear(&color),
+        let mut more = false;
+        match (scene, high) {
+            (Some(scene), Some(settings)) => {
+                self.clear(&color);
+                more = self.renderer.render_high(&color, rect, &scene, &settings);
+            }
+            (Some(scene), None) => self.renderer.render(&color, &self.depth, rect, &scene, true),
+            (None, _) => self.clear(&color),
         }
         frame.present();
+        more
+    }
+
+    /// The high quality settings, when the view is in that mode.
+    fn high_settings(&self) -> Option<mi_render::HighSettings> {
+        let state = self.window.state::<AppState>();
+        if state.view().mode != crate::scene_builder::ViewMode::Render {
+            return None;
+        }
+        let guard = state.project();
+        let settings = guard.as_ref().map(crate::scene_builder::high_settings);
+        settings
     }
 
     /// Fills the target with the interface background while no project is
@@ -265,16 +292,27 @@ impl RenderThread {
                     particles: Some(state.particles()),
                 };
             let mut resources = Resources { renderer: &mut self.renderer, cache: &mut self.cache };
-            build_scene(project, inputs, view.marker, camera, view.mode, &mut resources)
+            // Exports are always lit, whatever the view shows.
+            let mode = if export_camera.is_some() { crate::scene_builder::ViewMode::Shaded } else { view.mode };
+            build_scene(project, inputs, view.marker, camera, mode, &mut resources)
         });
         (scene, rect)
     }
 
-    fn image(&mut self, width: u32, height: u32, timeline_camera: bool) -> Option<Vec<u8>> {
+    fn image(&mut self, width: u32, height: u32, timeline_camera: bool, high_quality: bool) -> Option<Vec<u8>> {
         let (scene, _) = self.scene(Some(timeline_camera));
         let scene = scene?;
         let target = self.renderer.offscreen(width, height);
-        self.renderer.render(&target.color, &target.depth, target.viewport(), &scene, true);
+        let settings = {
+            let state = self.window.state::<AppState>();
+            let guard = state.project();
+            guard.as_ref().filter(|_| high_quality).map(crate::scene_builder::high_settings)
+        };
+        match settings {
+            // All samples, one after the other.
+            Some(settings) => while self.renderer.render_high(&target.color, target.viewport(), &scene, &settings) {},
+            None => self.renderer.render(&target.color, &target.depth, target.viewport(), &scene, true),
+        }
         match target.read_rgba() {
             Ok(pixels) => Some(pixels),
             Err(error) => {
@@ -302,10 +340,25 @@ impl RenderThread {
     }
 
     fn run(mut self, receiver: Receiver<Message>) {
-        while let Ok(first) = receiver.recv() {
+        // Set while the high quality mode has samples left to gather: the
+        // view is then drawn again without being asked.
+        let mut gathering = false;
+        loop {
+            let first = if gathering {
+                match receiver.try_recv() {
+                    Ok(message) => Some(message),
+                    Err(mpsc::TryRecvError::Empty) => None,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            } else {
+                match receiver.recv() {
+                    Ok(message) => Some(message),
+                    Err(_) => break,
+                }
+            };
             // Handle everything that queued up, then draw once.
-            let mut redraw = false;
-            for message in std::iter::once(first).chain(receiver.try_iter()) {
+            let mut redraw = gathering;
+            for message in first.into_iter().chain(receiver.try_iter()) {
                 match message {
                     Message::Redraw => redraw = true,
                     Message::Resize(width, height) => {
@@ -315,13 +368,13 @@ impl RenderThread {
                     Message::Pick { x, y, exclude, reply } => {
                         let _ = reply.send(self.pick(x, y, &exclude));
                     }
-                    Message::Image { width, height, timeline_camera, reply } => {
-                        let _ = reply.send(self.image(width, height, timeline_camera));
+                    Message::Image { width, height, timeline_camera, high_quality, reply } => {
+                        let _ = reply.send(self.image(width, height, timeline_camera, high_quality));
                     }
                 }
             }
             if redraw {
-                self.draw();
+                gathering = self.draw();
             }
         }
     }

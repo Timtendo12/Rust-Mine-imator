@@ -5,11 +5,13 @@
 
 pub mod camera;
 pub mod environment;
+pub mod high;
 mod renderer;
 pub mod scene;
 
 pub use camera::{Camera, WorkCamera};
 pub use environment::{Lighting, SkySettings};
+pub use high::HighSettings;
 pub use mi_mesh::{ground_mesh, shape_mesh, MeshData, Shape, ShapeSettings, Vertex};
 pub use renderer::{
     request_device, GpuError, OffscreenTarget, Renderer, TextureFilter, Viewport, DEPTH_FORMAT, MAX_POINT_LIGHTS,
